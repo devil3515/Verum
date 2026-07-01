@@ -12,7 +12,7 @@ from analysis_engine.tools.cleaning_ops import (
 def _infer_numeric_columns(df: pd.DataFrame) -> list[str]:
     candidates = []
     for col in df.columns:
-        if pd.api.types.is_numeric_dtype(df[col]):
+        if pd.api.types.is_numeric_dtype(df[col]) and not pd.api.types.is_bool_dtype(df[col]):
             candidates.append(col)
             continue
         coerced = pd.to_numeric(df[col], errors="coerce")

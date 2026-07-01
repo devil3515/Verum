@@ -67,10 +67,10 @@ def synthesis_node(state: PipelineState) -> dict:
 # Plan-aware conditional edges
 # ---------------------------------------------------------------------------
 
-
 def route_after_planner(state: PipelineState) -> str:
     if "clean_data" in state.plan:
         return "cleaning"
+    # no cleaning needed per the plan - go straight to analysis
     return "analysis"
 
 
@@ -186,6 +186,7 @@ def main():
 
     initial_state = PipelineState(
         run_id=str(uuid.uuid4()),
+        question="Which region has the highest revenue and is there an outlier?",
         files=[
             FileMeta(
                 file_id="input-file-1",

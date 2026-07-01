@@ -58,7 +58,7 @@ def flag_outliers_iqr(df: pd.DataFrame, column: str) -> tuple[pd.DataFrame, list
     decision on whether to drop can be layered in later if needed.
     """
     log = []
-    if column not in df.columns or not pd.api.types.is_numeric_dtype(df[column]):
+    if column not in df.columns or not pd.api.types.is_numeric_dtype(df[column]) or pd.api.types.is_bool_dtype(df[column]):
         return df, log
 
     q1 = df[column].quantile(0.25)

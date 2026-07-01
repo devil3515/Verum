@@ -51,6 +51,7 @@ class PipelineState(BaseModel):
     cleaning_log: list[CleaningLogEntry] = Field(default_factory=list)
 
     plan: list[str] = Field(default_factory=list)
+    question: Optional[str] = None
     claims: list[Claim] = Field(default_factory=list)
     chart_refs: list[str] = Field(default_factory=list)
 
