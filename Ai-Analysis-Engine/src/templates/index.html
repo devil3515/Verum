@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Verum — AI Data Analysis Engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-void:     #08080d;
+      --bg-deep:     #0e0e16;
+      --bg-card:     #13131e;
+      --bg-elevated: #1a1a2a;
+      --border:      rgba(255,255,255,0.08);
+      --border-glow: rgba(99,102,241,0.35);
+      --accent:      #6366f1;
+      --accent-light:#818cf8;
+      --accent-glow: rgba(99,102,241,0.18);
+      --success:     #22c55e;
+      --warning:     #f59e0b;
+      --text-primary:  #e8e8f0;
+      --text-secondary:#9090a8;
+      --text-muted:    #505068;
+      --mono:        'JetBrains Mono', monospace;
+      --sans:        'Inter', sans-serif;
+    }
+
+    html, body { height: 100%; background: var(--bg-void); color: var(--text-primary); font-family: var(--sans); overflow: hidden; }
+
+    /* ── Layout ───────────────────────────────────────── */
+    .shell { display: flex; height: 100vh; }
+
+    /* sidebar */
+    .sidebar {
+      width: 240px; flex-shrink: 0;
+      background: var(--bg-deep);
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      padding: 20px 0;
+    }
+    .logo {
+      display: flex; align-items: center; gap: 10px;
+      padding: 0 20px 24px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+    .logo-icon {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: linear-gradient(135deg, #6366f1, #818cf8);
+      display:flex; align-items:center; justify-content:center; font-size:18px;
+      box-shadow: 0 0 20px rgba(99,102,241,0.4);
+    }
+    .logo-text { font-size:20px; font-weight:700; letter-spacing:-0.5px; }
+
+    .nav-item {
+      display: flex; align-items:center; gap:10px;
+      padding: 10px 16px; margin: 2px 8px;
+      border-radius: 8px; cursor:pointer; font-size:14px; font-weight:500;
+      color: var(--text-secondary); transition: all .15s;
+    }
+    .nav-item:hover { background: var(--bg-elevated); color: var(--text-primary); }
+    .nav-item.active { background: var(--accent-glow); color: var(--accent-light); }
+    .nav-icon { font-size:16px; }
+
+    .sidebar-bottom { margin-top:auto; padding: 16px 20px; border-top:1px solid var(--border); }
+    .user-row { display:flex; align-items:center; gap:10px; font-size:13px; }
+    .avatar { width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#a855f7);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700; }
+
+    /* main */
+    .main { flex:1; overflow:hidden; display:flex; flex-direction:column; }
+    .topbar {
+      padding: 16px 28px; border-bottom: 1px solid var(--border);
+      display:flex; align-items:center; justify-content:space-between;
+      background: var(--bg-deep); flex-shrink:0;
+    }
+    .topbar-title { font-size:15px; font-weight:600; }
+    .topbar-badge {
+      font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px;
+      background: var(--bg-elevated); color: var(--text-secondary); border:1px solid var(--border);
+      transition: all .3s;
+    }
+    .topbar-badge.running { background:rgba(99,102,241,0.15); color:var(--accent-light); border-color:var(--border-glow); animation: pulse-badge 2s infinite; }
+    .topbar-badge.done    { background:rgba(34,197,94,0.12); color:var(--success); border-color:rgba(34,197,94,0.3); }
+
+    @keyframes pulse-badge { 0%,100%{opacity:1} 50%{opacity:.6} }
+
+    .content { flex:1; overflow-y:auto; padding:24px 28px; display:flex; gap:20px; }
+
+    /* cards */
+    .card {
+      background: var(--bg-card); border:1px solid var(--border);
+      border-radius:14px; padding:20px;
+    }
+    .card-header {
+      display:flex; align-items:center; justify-content:space-between;
+      margin-bottom:16px;
+    }
+    .card-title { font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; color:var(--text-secondary); }
+
+    /* ── Left pane ───────────────────────────────────── */
+    .left-pane { flex:1; display:flex;flex-direction:column;gap:20px;min-width:0; }
+
+    /* upload card */
+    .upload-zone {
+      border: 2px dashed rgba(99,102,241,0.35);
+      border-radius:10px; padding:32px 20px;
+      text-align:center; cursor:pointer; transition: all .2s;
+    }
+    .upload-zone:hover { border-color:var(--accent); background:rgba(99,102,241,0.05); }
+    .upload-zone.dragover { border-color:var(--accent); background:rgba(99,102,241,0.08); }
+    .upload-icon { font-size:36px; margin-bottom:12px; }
+    .upload-label { font-size:14px; font-weight:500; color:var(--text-secondary); }
+    .upload-label span { color:var(--accent-light); }
+    .upload-hint { font-size:12px; color:var(--text-muted); margin-top:4px; }
+    .file-chosen { display:flex; align-items:center; gap:8px; background:rgba(99,102,241,0.1); border-radius:8px; padding:10px 14px; margin-top:12px; font-size:13px; }
+    .file-chosen .remove { margin-left:auto; cursor:pointer; color:var(--text-muted); }
+
+    .input-group { margin-top:14px; }
+    .input-label { font-size:12px; font-weight:500; color:var(--text-secondary); margin-bottom:6px; display:block; }
+    .text-input {
+      width:100%; background:var(--bg-deep); border:1px solid var(--border);
+      border-radius:8px; padding:10px 14px; font-family:var(--sans); font-size:14px;
+      color:var(--text-primary); outline:none; transition:border .2s;
+    }
+    .text-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-glow); }
+    .text-input::placeholder { color:var(--text-muted); }
+
+    .run-btn {
+      width:100%; margin-top:16px; padding:13px;
+      background:linear-gradient(135deg,#6366f1,#4f46e5);
+      border:none; border-radius:10px; font-family:var(--sans); font-size:15px; font-weight:600;
+      color:#fff; cursor:pointer; transition: all .2s; letter-spacing:.02em;
+    }
+    .run-btn:hover { transform:translateY(-1px); box-shadow:0 8px 24px rgba(99,102,241,0.4); }
+    .run-btn:disabled { opacity:.5; cursor:not-allowed; transform:none; box-shadow:none; }
+
+    /* pipeline tracker */
+    .pipeline-track {
+      display:flex; align-items:center; gap:0;
+    }
+    .step {
+      display:flex; flex-direction:column; align-items:center; gap:6px;
+      flex:1;
+    }
+    .step-node {
+      width:32px; height:32px; border-radius:50%; border:2px solid var(--border);
+      background:var(--bg-elevated); display:flex;align-items:center;justify-content:center;
+      font-size:12px; transition:all .3s; position:relative; z-index:1;
+    }
+    .step-node.done   { background:#1a3a25; border-color:var(--success); color:var(--success); }
+    .step-node.active { background:rgba(99,102,241,0.2); border-color:var(--accent); color:var(--accent-light); animation:pulse-node 1.5s infinite; }
+    .step-node.pending{ color:var(--text-muted); }
+    @keyframes pulse-node { 0%,100%{box-shadow:0 0 0 0 rgba(99,102,241,0.5);}50%{box-shadow:0 0 0 8px rgba(99,102,241,0);} }
+    .step-label { font-size:11px; text-align:center; color:var(--text-muted); font-weight:500; white-space:nowrap; }
+    .step-label.active { color:var(--accent-light); font-weight:600; }
+    .step-label.done   { color:var(--success); }
+
+    .step-line {
+      flex:1; height:2px; background:var(--border); margin-bottom:18px; transition:background .3s;
+    }
+    .step-line.done { background:var(--success); }
+    .step-line.active { background:linear-gradient(90deg, var(--success), var(--accent)); }
+
+    /* console */
+    .console {
+      background: var(--bg-void); border-radius:10px; padding:16px;
+      font-family:var(--mono); font-size:12.5px; line-height:1.7;
+      min-height:220px; max-height:310px; overflow-y:auto; position:relative;
+    }
+    .console:empty::after { content:"Run an analysis to see live agent logs here..."; color:var(--text-muted); }
+    .log-line { padding:1px 0; word-break:break-all; }
+    .log-line.info    { color:#a5b4fc; }
+    .log-line.success { color:#6ee7b7; }
+    .log-line.warn    { color:#fbbf24; }
+    .log-line.muted   { color:var(--text-muted); }
+    .log-line.explore { color:#67e8f9; }
+    .cursor { display:inline-block; width:7px;height:14px;background:var(--accent-light);margin-left:2px;vertical-align:middle;animation:blink 1s step-end infinite; }
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+
+    /* ── Right pane ──────────────────────────────────── */
+    .right-pane { width: 360px; flex-shrink:0; display:flex;flex-direction:column;gap:20px; }
+
+    /* insights */
+    .insight-card {
+      border-left:3px solid var(--accent); border-radius:0 8px 8px 0;
+      padding:12px 14px; background:var(--bg-elevated); margin-bottom:10px;
+    }
+    .insight-title { font-size:13px;font-weight:600; margin-bottom:4px; }
+    .insight-value { display:inline-block; font-size:12px; background:rgba(99,102,241,0.15); color:var(--accent-light); padding:2px 8px; border-radius:12px; margin-bottom:6px; font-family:var(--mono); }
+    .insight-desc  { font-size:12px; color:var(--text-secondary); line-height:1.5; }
+
+    /* charts */
+    .charts-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:14px; }
+    .chart-wrapper {
+      background:var(--bg-elevated); border:1px solid var(--border);
+      border-radius:12px; overflow:hidden;
+    }
+    .chart-title { padding:12px 14px 0; font-size:13px; font-weight:500; color:var(--text-secondary); }
+
+    .report-body { font-size:14px; line-height:1.8; color:var(--text-secondary); }
+    .report-body h1,.report-body h2,.report-body h3 { color:var(--text-primary); margin:16px 0 8px; }
+    .report-body ul { padding-left:20px; }
+    .report-body li { margin-bottom:6px; }
+
+    /* empty states */
+    .empty-state { padding:40px 0; text-align:center; color:var(--text-muted); font-size:13px; }
+    .empty-state .icon { font-size:32px; margin-bottom:10px; }
+
+    /* scrollbars */
+    ::-webkit-scrollbar { width:5px; }
+    ::-webkit-scrollbar-track { background:transparent; }
+    ::-webkit-scrollbar-thumb { background:var(--border); border-radius:10px; }
+
+    #file-input { display:none; }
+
+    /* progress shimmer on card top */
+    .progress-shimmer {
+      height:2px; border-radius:2px; background:linear-gradient(90deg,transparent,var(--accent),transparent);
+      background-size:200% 100%; animation:shimmer 1.5s infinite; display:none;
+    }
+    @keyframes shimmer { 0%{background-position:100% 0}100%{background-position:-100% 0} }
+    .progress-shimmer.active { display:block; }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <!-- sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-icon">⚡</div>
+      <span class="logo-text">Verum</span>
+    </div>
+    <nav>
+      <div class="nav-item active"><span class="nav-icon">✦</span> New Analysis</div>
+      <div class="nav-item"><span class="nav-icon">◷</span> History</div>
+      <div class="nav-item"><span class="nav-icon">⚙</span> Settings</div>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="user-row">
+        <div class="avatar">VS</div>
+        <div>
+          <div style="font-size:13px;font-weight:500">Verum User</div>
+          <div style="font-size:11px;color:var(--text-muted)">Analysis Engine</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- main -->
+  <div class="main">
+    <header class="topbar">
+      <span class="topbar-title">Analysis Workspace</span>
+      <span class="topbar-badge" id="status-badge">Idle</span>
+    </header>
+
+    <div class="content">
+      <!-- LEFT -->
+      <div class="left-pane">
+
+        <!-- upload card -->
+        <div class="card" id="upload-card">
+          <div class="progress-shimmer" id="upload-shimmer"></div>
+          <div class="card-header">
+            <span class="card-title">⬆ Start Analysis</span>
+          </div>
+          <div class="upload-zone" id="drop-zone">
+            <div class="upload-icon">📂</div>
+            <div class="upload-label">Drop your <span>CSV file</span> here or <span style="cursor:pointer" onclick="document.getElementById('file-input').click()">browse</span></div>
+            <div class="upload-hint">Supports CSV files up to 100MB</div>
+            <div class="file-chosen" id="file-chosen" style="display:none">
+              <span>📄</span> <span id="file-name"></span>
+              <span class="remove" id="remove-file">✕</span>
+            </div>
+          </div>
+          <input type="file" id="file-input" accept=".csv" />
+          <div class="input-group">
+            <label class="input-label">Research Question <span style="color:var(--text-muted)">(optional)</span></label>
+            <input class="text-input" id="question" placeholder="e.g. Which region has the highest revenue?" />
+          </div>
+          <button class="run-btn" id="run-btn" disabled>Run Analysis</button>
+        </div>
+
+        <!-- pipeline tracker -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">⚙ Execution Pipeline</span>
+          </div>
+          <div class="pipeline-track">
+            <div class="step">
+              <div class="step-node pending" id="step-planning">◇</div>
+              <div class="step-label" id="lbl-planning">Planning</div>
+            </div>
+            <div class="step-line" id="line-0"></div>
+            <div class="step">
+              <div class="step-node pending" id="step-cleaning">◇</div>
+              <div class="step-label" id="lbl-cleaning">Cleaning</div>
+            </div>
+            <div class="step-line" id="line-1"></div>
+            <div class="step">
+              <div class="step-node pending" id="step-analyzing">◇</div>
+              <div class="step-label" id="lbl-analyzing">Analyzing</div>
+            </div>
+            <div class="step-line" id="line-2"></div>
+            <div class="step">
+              <div class="step-node pending" id="step-verifying">◇</div>
+              <div class="step-label" id="lbl-verifying">Verifying</div>
+            </div>
+            <div class="step-line" id="line-3"></div>
+            <div class="step">
+              <div class="step-node pending" id="step-report">◇</div>
+              <div class="step-label" id="lbl-report">Report</div>
+            </div>
+          </div>
+
+          <!-- console -->
+          <div style="margin-top:18px;">
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px;">
+              Agent Console
+            </div>
+            <div class="console" id="console"></div>
+          </div>
+        </div>
+
+        <!-- charts -->
+        <div class="card" id="charts-card">
+          <div class="card-header">
+            <span class="card-title">📊 Generated Charts</span>
+            <span style="font-size:12px;color:var(--text-muted)" id="chart-count">0 charts</span>
+          </div>
+          <div id="charts-container" class="charts-grid">
+            <div class="empty-state"><div class="icon">📈</div>Charts will appear as the agent generates insights</div>
+          </div>
+        </div>
+
+        <!-- report -->
+        <div class="card" id="report-card" style="display:none">
+          <div class="card-header">
+            <span class="card-title">📄 Analysis Report</span>
+          </div>
+          <div class="report-body" id="report-body"></div>
+        </div>
+      </div>
+
+      <!-- RIGHT -->
+      <div class="right-pane">
+
+        <!-- insights -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">💡 Key Insights</span>
+            <span style="font-size:12px;color:var(--text-muted)" id="claim-count">0 insights</span>
+          </div>
+          <div id="insights-container">
+            <div class="empty-state"><div class="icon">🧠</div>Insights will populate after analysis</div>
+          </div>
+        </div>
+
+        <!-- cleaning summary -->
+        <div class="card" id="cleaning-card" style="display:none">
+          <div class="card-header">
+            <span class="card-title">🧹 Cleaning Summary</span>
+          </div>
+          <div id="cleaning-log" style="font-size:13px;color:var(--text-secondary);line-height:1.8;"></div>
+        </div>
+      </div>
+    </div><!-- end content -->
+  </div><!-- end main -->
+</div><!-- end shell -->
+
+<script>
+const $ = id => document.getElementById(id);
+
+// ── File handling ─────────────────────────────────────────────────────────────
+let selectedFile = null;
+const dropZone = $('drop-zone');
+const fileInput = $('file-input');
+
+function setFile(file) {
+  if (!file || !file.name.endsWith('.csv')) return;
+  selectedFile = file;
+  $('file-name').textContent = file.name;
+  $('file-chosen').style.display = 'flex';
+  $('run-btn').disabled = false;
+}
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('dragover'); setFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', () => setFile(fileInput.files[0]));
+$('remove-file').addEventListener('click', e => {
+  e.stopPropagation(); selectedFile = null;
+  $('file-chosen').style.display = 'none';
+  $('run-btn').disabled = true;
+  fileInput.value = '';
+});
+dropZone.addEventListener('click', e => { if (!e.target.closest('.file-chosen')) fileInput.click(); });
+
+// ── Pipeline tracker ──────────────────────────────────────────────────────────
+const STEPS = ['planning','cleaning','analyzing','verifying','report'];
+
+function setStepState(stepName, state) { // 'pending'|'active'|'done'
+  const node = $('step-' + stepName);
+  const lbl  = $('lbl-'  + stepName);
+  node.className = 'step-node ' + state;
+  lbl.className  = 'step-label ' + state;
+  if (state === 'done')   { node.textContent = '✓'; }
+  if (state === 'active') { node.textContent = '●'; }
+  if (state === 'pending'){ node.textContent = '◇'; }
+}
+
+function setCurrentStep(name) {
+  const idx = STEPS.indexOf(name);
+  STEPS.forEach((s, i) => {
+    if (i < idx) {
+      setStepState(s, 'done');
+      const line = $('line-' + i);
+      if (line) line.className = 'step-line done';
+    } else if (i === idx) {
+      setStepState(s, 'active');
+      const line = $('line-' + i);
+      if (line) line.className = 'step-line active';
+    } else {
+      setStepState(s, 'pending');
+    }
+  });
+}
+
+function setAllDone() {
+  STEPS.forEach((s, i) => {
+    setStepState(s, 'done');
+    const line = $('line-' + i);
+    if (line) line.className = 'step-line done';
+  });
+}
+
+function resetSteps() {
+  STEPS.forEach((s, i) => {
+    setStepState(s, 'pending');
+    const line = $('line-' + i);
+    if (line) line.className = 'step-line';
+  });
+}
+
+// ── Console ───────────────────────────────────────────────────────────────────
+const consoleEl = $('console');
+let cursorEl = null;
+
+function addLog(text, cls = 'muted') {
+  if (cursorEl) cursorEl.remove();
+  const div = document.createElement('div');
+  div.className = 'log-line ' + cls;
+  div.textContent = text;
+  consoleEl.appendChild(div);
+  cursorEl = document.createElement('span');
+  cursorEl.className = 'cursor';
+  consoleEl.appendChild(cursorEl);
+  consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+
+function clearConsole() {
+  consoleEl.innerHTML = '';
+  cursorEl = null;
+}
+
+// ── Charts ────────────────────────────────────────────────────────────────────
+let chartCount = 0;
+const chartsContainer = $('charts-container');
+
+const CHART_COLORS = {
+  bar:       'rgba(99,102,241,0.85)',
+  scatter:   'rgba(16,185,129,0.75)',
+  histogram: 'rgba(245,158,11,0.85)',
+  default:   'rgba(99,102,241,0.85)',
+};
+
+function chartTitle(layout) {
+  const t = layout?.title;
+  if (!t) return 'Chart';
+  if (typeof t === 'string') return t;
+  return t.text || 'Chart';
+}
+
+function normalizeTraces(spec) {
+  // Native Plotly figure: data is an array of trace objects
+  if (Array.isArray(spec.data)) {
+    return spec.data;
+  }
+  // Backend simplified format: { type, data: { x, y }, layout }
+  if (spec.type && spec.data && typeof spec.data === 'object') {
+    const trace = { type: spec.type, name: chartTitle(spec.layout) };
+    if (spec.type === 'histogram') {
+      trace.x = spec.data.x;
+    } else {
+      trace.x = spec.data.x;
+      trace.y = spec.data.y;
+      if (spec.type === 'scatter') trace.mode = spec.data.mode || 'markers';
+    }
+    return [trace];
+  }
+  // Single trace object stored in data
+  if (spec.data && spec.data.type) {
+    return [spec.data];
+  }
+  return [];
+}
+
+async function renderChart(ref) {
+  try {
+    const res = await fetch('/charts/' + ref);
+    const spec = await res.json();
+    chartCount++;
+    $('chart-count').textContent = chartCount + ' chart' + (chartCount !== 1 ? 's' : '');
+
+    if (chartCount === 1) chartsContainer.innerHTML = '';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'chart-wrapper';
+    const title = document.createElement('div');
+    title.className = 'chart-title';
+    title.textContent = chartTitle(spec.layout);
+    wrapper.appendChild(title);
+
+    const plotDiv = document.createElement('div');
+    plotDiv.style.height = '260px';
+    wrapper.appendChild(plotDiv);
+    chartsContainer.appendChild(wrapper);
+
+    const plotTraces = normalizeTraces(spec).map(d => {
+      const color = CHART_COLORS[d.type] || CHART_COLORS.default;
+      return {
+        ...d,
+        marker: { ...(d.marker || {}), color: d.marker?.color || color, size: d.type === 'scatter' ? 6 : undefined },
+      };
+    });
+
+    if (!plotTraces.length) {
+      plotDiv.textContent = 'Unable to render chart';
+      return;
+    }
+
+    const darkLayout = {
+      ...spec.layout,
+      title: undefined,
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      plot_bgcolor:  'rgba(0,0,0,0)',
+      font: { color: '#9090a8', family: 'Inter' },
+      xaxis: { ...(spec.layout?.xaxis || {}), gridcolor: '#1a1a2a', color: '#9090a8' },
+      yaxis: { ...(spec.layout?.yaxis || {}), gridcolor: '#1a1a2a', color: '#9090a8' },
+      margin: { t: 10, l: 50, r: 20, b: 50 },
+    };
+
+    Plotly.newPlot(plotDiv, plotTraces, darkLayout, { displayModeBar: false, responsive: true });
+  } catch (e) {
+    console.error('Chart render failed:', e);
+  }
+}
+
+// ── Insights ──────────────────────────────────────────────────────────────────
+let insightCount = 0;
+const insightsContainer = $('insights-container');
+
+function addInsight(claim) {
+  insightCount++;
+  $('claim-count').textContent = insightCount + ' insight' + (insightCount !== 1 ? 's' : '');
+  if (insightCount === 1) insightsContainer.innerHTML = '';
+
+  const card = document.createElement('div');
+  card.className = 'insight-card';
+  card.innerHTML = `
+    <div class="insight-title">${escHtml(claim.metric?.replace(/_/g,' ') || 'Insight')}</div>
+    <div class="insight-value">${formatValue(claim.value)}</div>
+    <div class="insight-desc">${escHtml(claim.text)}</div>
+  `;
+  insightsContainer.appendChild(card);
+}
+
+function formatValue(v) {
+  if (typeof v !== 'number') return String(v);
+  return Math.abs(v) > 1000 ? v.toLocaleString(undefined,{maximumFractionDigits:2}) : v.toFixed(2);
+}
+
+function escHtml(s) {
+  const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
+}
+
+// ── Status badge ──────────────────────────────────────────────────────────────
+function setBadge(state, text) {
+  const b = $('status-badge');
+  b.className = 'topbar-badge ' + state;
+  b.textContent = text;
+}
+
+// ── SSE event handler ─────────────────────────────────────────────────────────
+function handleEvent(ev) {
+  const data = JSON.parse(ev.data);
+  const t = data.type;
+
+  if (t === 'run_started') {
+    addLog(`▶ Run started: ${data.run_id}`, 'info');
+    setBadge('running', 'Running');
+    $('upload-shimmer').classList.add('active');
+    setCurrentStep('planning');
+  }
+
+  if (t === 'tool_called') {
+    const node = data.node;
+    if (node === 'analysis') setCurrentStep('analyzing');
+    const argsStr = data.args ? Object.entries(data.args).map(([k,v]) => `${k}=${v}`).join(', ') : '';
+    addLog(`  [explore] ${data.tool}(${argsStr})`, 'explore');
+  }
+
+  if (t === 'tool_result') {
+    const short = (data.output || '').split('\n')[0].slice(0, 100);
+    addLog(`    → ${short}`, 'muted');
+  }
+
+  if (t === 'chart_generated') {
+    addLog(`  ✦ Chart generated: ${data.ref}`, 'success');
+    renderChart(data.ref);
+  }
+
+  if (t === 'claim_generated') {
+    addLog(`  ✧ Claim: ${data.text.slice(0,80)}…`, 'success');
+    addInsight(data);
+  }
+
+  if (t === 'run_complete') {
+    $('upload-shimmer').classList.remove('active');
+    setAllDone();
+    setBadge('done', 'Done');
+    addLog('✅ Analysis complete.', 'success');
+
+    // render report
+    if (data.report) {
+      $('report-card').style.display = 'block';
+      $('report-body').innerHTML = marked.parse(data.report);
+    }
+
+    // render any claims not yet streamed (from run_complete payload)
+    if (data.claims && insightCount === 0) {
+      data.claims.forEach(addInsight);
+    }
+
+    // render chart refs if not yet streamed (or re-render if streaming failed)
+    if (data.chart_refs?.length) {
+      if (chartCount === 0) {
+        data.chart_refs.forEach(renderChart);
+      } else if (chartCount < data.chart_refs.length) {
+        data.chart_refs.slice(chartCount).forEach(renderChart);
+      }
+    }
+
+    // cleaning log
+    if (data.cleaning_log?.length) {
+      $('cleaning-card').style.display = 'block';
+      $('cleaning-log').innerHTML = data.cleaning_log.map(e =>
+        `<div>• <b>${e.operation}</b>: ${escHtml(e.rationale)}</div>`
+      ).join('');
+    }
+
+    $('run-btn').disabled = false;
+    $('run-btn').textContent = 'Run Again';
+  }
+
+  if (t === 'run_error') {
+    $('upload-shimmer').classList.remove('active');
+    setBadge('', 'Error');
+    addLog('❌ Error: ' + data.message, 'warn');
+    $('run-btn').disabled = false;
+  }
+}
+
+// Map pipeline status strings from backend → UI step names
+const STATUS_STEP_MAP = {
+  planning:    'planning',
+  cleaning:    'cleaning',
+  analyzing:   'analyzing',
+  verifying:   'verifying',
+  synthesizing:'report',
+  done:        'report',
+};
+
+// ── Run button ────────────────────────────────────────────────────────────────
+$('run-btn').addEventListener('click', async () => {
+  if (!selectedFile) return;
+
+  // reset UI
+  clearConsole();
+  resetSteps();
+  insightCount = 0; chartCount = 0;
+  insightsContainer.innerHTML = '<div class="empty-state"><div class="icon">🧠</div>Insights will populate after analysis</div>';
+  chartsContainer.innerHTML   = '<div class="empty-state"><div class="icon">📈</div>Charts will appear as the agent generates insights</div>';
+  $('report-card').style.display   = 'none';
+  $('cleaning-card').style.display = 'none';
+  $('run-btn').disabled = true;
+  $('run-btn').textContent = 'Running…';
+  $('claim-count').textContent = '0 insights';
+  $('chart-count').textContent = '0 charts';
+
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+  formData.append('question', $('question').value.trim());
+
+  const response = await fetch('/api/run', { method: 'POST', body: formData });
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop(); // keep incomplete last line
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        try {
+          const fakeEvent = { data: line.slice(6) };
+          handleEvent(fakeEvent);
+        } catch {}
+      }
+    }
+  }
+});
+</script>
+</body>
+</html>

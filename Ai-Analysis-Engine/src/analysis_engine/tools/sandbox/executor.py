@@ -1,7 +1,9 @@
 import sys
-import signal
-import traceback
+import os
+import pickle
+import subprocess
 import resource
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any, Optional
 from contextlib import redirect_stdout, redirect_stderr
@@ -49,6 +51,21 @@ class SandboxConfig:
 # Default config
 DEFAULT_CONFIG = SandboxConfig()
 
+# src/ root — subprocess worker needs this on PYTHONPATH
+_SRC_ROOT = Path(__file__).resolve().parents[3]
+
+# Inline worker: reads pickled {code, df, config} from stdin, writes ExecutionResult to stdout
+_WORKER_SCRIPT = """
+import pickle
+import sys
+from analysis_engine.tools.sandbox.executor import _execute_sandbox_core, SandboxConfig
+
+payload = pickle.loads(sys.stdin.buffer.read())
+config = SandboxConfig(**payload["config"])
+result = _execute_sandbox_core(payload["code"], payload["df"], config)
+sys.stdout.buffer.write(pickle.dumps(result))
+"""
+
 
 # ---------------------------------------------------------------------------
 # Restricted builtins
@@ -83,6 +100,14 @@ def _create_restricted_builtins() -> dict:
         "True", "False",
         # Iteration helpers
         "filter", "map",
+        # Output / introspection (stdout is captured)
+        "print",
+        "getattr", "hasattr", "setattr",
+        "type", "object",
+        # Common exceptions (needed by pandas/numpy internals)
+        "Exception", "BaseException",
+        "ValueError", "TypeError", "KeyError", "AttributeError",
+        "IndexError", "ZeroDivisionError", "RuntimeError",
         # Collections (as constructors)
         "slice", "super", "property", "staticmethod", "classmethod",
     }
@@ -95,6 +120,10 @@ def _create_restricted_builtins() -> dict:
 
 
 SAFE_BUILTINS = _create_restricted_builtins()
+
+# Exposed as module-level globals so dict/list comprehensions can resolve them
+# (comprehension scopes don't always inherit __builtins__ in exec()).
+_COMPREHENSION_GLOBALS = {k: v for k, v in SAFE_BUILTINS.items() if k.isidentifier()}
 
 
 # ---------------------------------------------------------------------------
@@ -114,20 +143,81 @@ class ExecutionResult:
 
 
 # ---------------------------------------------------------------------------
-# Timeout handler
-# ---------------------------------------------------------------------------
-
-class _TimeoutError(Exception):
-    pass
-
-
-def _timeout_handler(signum, frame):
-    raise _TimeoutError("Execution timed out")
-
-
-# ---------------------------------------------------------------------------
 # Main executor
 # ---------------------------------------------------------------------------
+
+def _config_to_dict(config: SandboxConfig) -> dict:
+    return {
+        "max_execution_time_seconds": config.max_execution_time_seconds,
+        "max_memory_mb": config.max_memory_mb,
+        "max_output_chars": config.max_output_chars,
+        "max_dataframe_rows_for_display": config.max_dataframe_rows_for_display,
+        "max_series_elements_for_display": config.max_series_elements_for_display,
+    }
+
+
+def _subprocess_env() -> dict:
+    env = os.environ.copy()
+    src = str(_SRC_ROOT)
+    env["PYTHONPATH"] = src + os.pathsep + env.get("PYTHONPATH", "")
+    return env
+
+
+def _execute_in_subprocess(
+    code: str,
+    df: pd.DataFrame,
+    config: SandboxConfig,
+    guard_result: GuardResult,
+) -> ExecutionResult:
+    """
+    Execute sandbox code in a child process so timeouts work from any thread.
+
+    signal.alarm() only works on the main interpreter thread, but the FastAPI
+    server runs the analysis graph in a background thread — subprocess avoids that.
+    """
+    payload = pickle.dumps({
+        "code": code,
+        "df": df,
+        "config": _config_to_dict(config),
+    })
+
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", _WORKER_SCRIPT],
+            input=payload,
+            capture_output=True,
+            timeout=config.max_execution_time_seconds + 5,
+            env=_subprocess_env(),
+        )
+    except subprocess.TimeoutExpired:
+        return ExecutionResult(
+            success=False,
+            output="",
+            error=f"Execution timed out after {config.max_execution_time_seconds}s",
+            guard_result=guard_result,
+        )
+
+    if proc.returncode != 0:
+        err = proc.stderr.decode("utf-8", errors="replace").strip()
+        return ExecutionResult(
+            success=False,
+            output="",
+            error=err or "Sandbox worker process failed",
+            guard_result=guard_result,
+        )
+
+    if not proc.stdout:
+        return ExecutionResult(
+            success=False,
+            output="",
+            error="Sandbox process exited without returning a result",
+            guard_result=guard_result,
+        )
+
+    result: ExecutionResult = pickle.loads(proc.stdout)
+    result.guard_result = guard_result
+    return result
+
 
 def execute_sandbox_code(
     code: str,
@@ -154,9 +244,6 @@ def execute_sandbox_code(
     Returns:
         ExecutionResult with output, error, timing info
     """
-    import time
-
-    # 1. Validate code FIRST
     guard_result = validate_sandbox_code(code)
     if not guard_result.allowed:
         return ExecutionResult(
@@ -166,13 +253,30 @@ def execute_sandbox_code(
             guard_result=guard_result,
         )
 
-    # 2. Prepare execution environment
+    if extra_globals:
+        # extra_globals weaken isolation — only supported in-process (tests/CLI)
+        return _execute_sandbox_core(code, df, config, extra_globals=extra_globals)
+
+    return _execute_in_subprocess(code, df, config, guard_result)
+
+
+def _execute_sandbox_core(
+    code: str,
+    df: pd.DataFrame,
+    config: SandboxConfig = DEFAULT_CONFIG,
+    extra_globals: Optional[dict] = None,
+) -> ExecutionResult:
+    """Execute sandbox code in the current process (no timeout wrapper)."""
+    import time
+
+    # Prepare execution environment
     stdout_capture = StringIO()
     stderr_capture = StringIO()
 
     # Build restricted globals
     exec_globals = {
         "__builtins__": SAFE_BUILTINS,
+        **_COMPREHENSION_GLOBALS,
         "df": df,
         # Pre-imported modules
         **config.pre_imported,
@@ -195,42 +299,22 @@ def execute_sandbox_code(
         except (ValueError, resource.error):
             old_limits = None
 
-    # 4. Execute with timeout
     start_time = time.time()
     result_value = None
     error_msg = None
     truncated = False
 
-    # Set signal-based timeout (Unix only)
-    old_handler = None
-    if sys.platform != "win32":
-        old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-        signal.alarm(int(config.max_execution_time_seconds) + 1)
-
     try:
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-            # Compile first to catch syntax errors cleanly
             compiled = compile(code, "<sandbox>", "exec")
-
-            # Execute
             exec(compiled, exec_globals)
-
-            # Check if code set a 'result' variable
             result_value = exec_globals.get("result")
 
-    except _TimeoutError:
-        error_msg = f"Execution timed out after {config.max_execution_time_seconds}s"
     except MemoryError:
         error_msg = f"Memory limit exceeded ({config.max_memory_mb}MB)"
     except Exception as e:
         error_msg = f"{type(e).__name__}: {e}"
     finally:
-        # Restore signal handler
-        if sys.platform != "win32" and old_handler is not None:
-            signal.alarm(0)
-            signal.signal(signal.SIGALRM, old_handler)
-
-        # Restore resource limits to what they were before
         if sys.platform != "win32" and old_limits is not None:
             try:
                 resource.setrlimit(resource.RLIMIT_AS, old_limits)
@@ -272,7 +356,7 @@ def execute_sandbox_code(
         execution_time_seconds=round(execution_time, 3),
         returned_value=result_value,
         truncated=truncated,
-        guard_result=guard_result,
+        guard_result=None,
         chart_spec=chart_spec,
     )
 

@@ -15,20 +15,28 @@ from analysis_engine.tools.base import ToolResult
 # where chart JSON files are saved — backend serves from here
 CHARTS_DIR = Path(os.environ.get("VERUM_CHARTS_DIR", "charts"))
 
+# global registry: run_id → event_callback
+# The web server registers here before invoking the graph so that
+# analysis_node can push live events back without any import cycles.
+RUN_CALLBACKS: dict[str, Callable[[str, dict], None]] = {}
+
 
 SYSTEM_PROMPT = """You are a data analysis agent with tools for exploring data and generating charts.
 
 Rules:
-- px and go are pre-imported. Do NOT import them — just use them directly.
-- Use result = fig to capture a chart (not print).
-- print() is not available — use result = <value> for all output.
-- Pick the right chart type: px.bar() for comparisons, px.histogram() for distributions,
-  px.scatter() for correlations, px.line() for time trends.
+- Use the dedicated chart tools first: plot_grouped_bar, plot_scatter, plot_histogram.
+- Generate at least 4 charts covering different angles — distributions (histogram),
+  category comparisons (bar), and correlations (scatter).
+- px and go are pre-imported in run_code. Do NOT import them — just use them directly.
+- Use result = fig to capture a chart from run_code (not print).
+- print() works for debug output, but set result = <value> to return structured data.
+- Pick the right chart type: bar for comparisons, histogram for distributions,
+  scatter for correlations, line for time trends.
 - Always set a descriptive title and axis labels.
 - For every meaningful finding, generate a chart immediately after discovering it.
 - Call finish() when you have 3-5 strong insights with charts.
 
-Example chart:
+Example chart via run_code:
   grouped = df.groupby('region')['revenue'].mean().reset_index()
   result = px.bar(grouped, x='region', y='revenue',
                   title='Mean Revenue by Region',
@@ -89,6 +97,11 @@ def analysis_node(
     state: PipelineState,
     event_callback: Optional[Callable[[str, dict], None]] = None,
 ) -> dict:
+    # If no callback supplied directly, check the global registry
+    # (populated by the web server before invoking the graph)
+    if event_callback is None:
+        event_callback = RUN_CALLBACKS.get(state.run_id)
+
     if not state.cleaned_refs:
         print("[analysis] no cleaned files, skipping")
         return {"status": "verifying"}
