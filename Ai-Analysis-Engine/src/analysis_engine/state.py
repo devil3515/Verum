@@ -54,13 +54,13 @@ class PipelineState(BaseModel):
     question: Optional[str] = None
     claims: list[Claim] = Field(default_factory=list)
     chart_refs: list[str] = Field(default_factory=list)
+    chart_specs: dict[str, dict] = Field(default_factory=dict)
 
     status: Literal[
         "planning",
         "cleaning",
         "analyzing",
         "verifying",
-        "visualizing",
         "synthesizing",
         "done",
         "failed",

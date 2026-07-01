@@ -3,3 +3,5 @@
 venv/
 test_data/
 __pycache__/
+charts/
+logs/

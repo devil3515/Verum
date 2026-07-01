@@ -39,15 +39,6 @@ def verification_node(state: PipelineState) -> dict:
         updated_claims.append(c)
     return {
         "claims": updated_claims,
-        "status": "visualizing",
-    }
-
-
-def visualization_node(state: PipelineState) -> dict:
-    print(f"[visualization] generating charts for {len(state.claims)} claim(s)")
-    fake_chart_refs = [f"chart-{c.id}.png" for c in state.claims]
-    return {
-        "chart_refs": fake_chart_refs,
         "status": "synthesizing",
     }
 
@@ -77,7 +68,7 @@ def route_after_planner(state: PipelineState) -> str:
 def route_after_analysis(state: PipelineState) -> str:
     if "verify_claims" in state.plan:
         return "verification"
-    return "visualization"
+    return "synthesis"
 
 
 def route_after_verification(state: PipelineState) -> str:
@@ -90,15 +81,7 @@ def route_after_verification(state: PipelineState) -> str:
     has_contradicted = any(c.verification_status == "contradicted" for c in state.claims)
     if has_contradicted:
         return "analysis"
-    if "generate_visualizations" in state.plan:
-        return "visualization"
     return "synthesis"
-
-
-def route_after_visualization(state: PipelineState) -> str:
-    if "synthesize_report" in state.plan:
-        return "synthesis"
-    return "end"
 
 
 # ---------------------------------------------------------------------------
@@ -112,7 +95,6 @@ def build_graph():
     graph.add_node("cleaning", cleaning_node)
     graph.add_node("analysis", analysis_node)
     graph.add_node("verification", verification_node)
-    graph.add_node("visualization", visualization_node)
     graph.add_node("synthesis", synthesis_node)
 
     graph.set_entry_point("planner")
@@ -133,7 +115,7 @@ def build_graph():
         route_after_analysis,
         {
             "verification": "verification",
-            "visualization": "visualization",
+            "synthesis": "synthesis",
         },
     )
 
@@ -142,17 +124,7 @@ def build_graph():
         route_after_verification,
         {
             "analysis": "analysis",
-            "visualization": "visualization",
             "synthesis": "synthesis",
-        },
-    )
-
-    graph.add_conditional_edges(
-        "visualization",
-        route_after_visualization,
-        {
-            "synthesis": "synthesis",
-            "end": END,
         },
     )
 
@@ -173,7 +145,7 @@ def main():
         file_path = sys.argv[1]
     else:
         file_path = os.environ.get(
-            "ANALYSIS_ENGINE_INPUT_FILE", "test_data/messy.csv"
+            "ANALYSIS_ENGINE_INPUT_FILE", "test_data/complex_10k.csv"
         )
 
     if not os.path.exists(file_path):
