@@ -36,11 +36,10 @@ Rules:
 - For every meaningful finding, generate a chart immediately after discovering it.
 - Call finish() when you have 3-5 strong insights with charts.
 
-Example chart via run_code:
-  grouped = df.groupby('region')['revenue'].mean().reset_index()
-  result = px.bar(grouped, x='region', y='revenue',
-                  title='Mean Revenue by Region',
-                  labels={'revenue': 'Mean Revenue ($)'})
+If using run_code to generate charts with plotly.express (px):
+  - Distributions: result = px.histogram(df, x='col')
+  - Relationships: result = px.scatter(df, x='col1', y='col2')
+  - Categories: result = px.bar(grouped, x='cat', y='val')
 """
 
 
