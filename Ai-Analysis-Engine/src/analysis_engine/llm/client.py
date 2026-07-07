@@ -1,3 +1,10 @@
+"""
+LLM client wrapper, OpenAI-compatible (Bedrock Mantle endpoint).
+
+Added in this revision: explore_loop() — a multi-turn tool-calling loop
+that lets the LLM call tools iteratively until it calls 'finish' or hits
+max_iterations. This is what powers the analysis agent's explore phase.
+"""
 import json
 import os
 from typing import Type, TypeVar, Callable
@@ -171,33 +178,54 @@ class _FakeLLMClient:
     def explore_loop(self, system_prompt, user_prompt, tools, tool_dispatcher,
                      finish_tool_name="finish", max_iterations=10):
         """
-        Fake explore loop: runs describe_column on first numeric column,
-        then calls finish with a canned claim. Enough to validate wiring.
+        Fake explore loop — works for cleaning, analysis, and verification.
+        Detects which agent is calling based on tool names available.
         """
-        from analysis_engine.tools.analysis_tools import ToolResult
-
-        # fake: call describe_column on the first numeric-looking column we find
-        # by parsing column names from the user_prompt
         import re
         cols = re.findall(r"`([^`]+)`", user_prompt)
-        numeric_col = next((c for c in cols if c not in ["object", "str"]), None)
+        first_col = next((c for c in cols if "(" not in c), None)
 
-        tool_results = []
-        if numeric_col:
-            fake_args = {"column": numeric_col}
-            result = tool_dispatcher("describe_column", fake_args)
-            print(f"  [explore/fake] describe_column({numeric_col}) -> {result.output[:80]}...")
+        tool_names = {t.get("function", {}).get("name") for t in tools}
+        is_cleaning     = "drop_nulls" in tool_names
+        is_verification = "recompute_groupby_mean" in tool_names
 
-        # fake finish
-        finish_args = {
-            "claims": [
+        if is_verification:
+            # extract claim ids from prompt to produce fake verdicts
+            claim_ids = re.findall(r"id=([a-f0-9\-]{36})", user_prompt)
+            verdicts = [
                 {
-                    "text": f"(fake LLM) {numeric_col or 'a column'} showed notable variation.",
-                    "metric": f"{numeric_col or 'col'}_variation",
-                    "value": 0.0,
-                    "source_query": f"describe_column({numeric_col or 'col'})",
-                    "source_columns": [numeric_col] if numeric_col else [],
+                    "claim_id":        cid,
+                    "status":          "confirmed",
+                    "confidence":      0.9,
+                    "reasoning":       "(fake LLM) recomputed value matches claimed value.",
+                    "recomputed_value": 0.0,
                 }
+                for cid in claim_ids
             ]
-        }
+            return [], {"verdicts": verdicts}
+
+        # call a real profiling tool so tests get real tool events
+        if first_col:
+            try:
+                tool_dispatcher("profile_column", {"column": first_col})
+                print(f"  [explore/fake] profile_column({first_col})")
+            except Exception:
+                try:
+                    tool_dispatcher("describe_column", {"column": first_col})
+                    print(f"  [explore/fake] describe_column({first_col})")
+                except Exception:
+                    pass
+
+        if is_cleaning:
+            finish_args = {"summary": f"(fake LLM) profiled {first_col or 'columns'}, no changes needed."}
+        else:
+            finish_args = {
+                "claims": [{
+                    "text":           f"(fake LLM) {first_col or 'a column'} showed notable variation.",
+                    "metric":         f"{first_col or 'col'}_variation",
+                    "value":          0.0,
+                    "source_query":   f"describe_column({first_col or 'col'})",
+                    "source_columns": [first_col] if first_col else [],
+                }]
+            }
         return [], finish_args
