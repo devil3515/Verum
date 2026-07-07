@@ -1,18 +1,9 @@
-"""
-Phase 3 (revised) — Cleaning Agent: profile → tool loop → finish.
-
-Same pattern as the analysis agent. The LLM profiles columns, decides
-which cleaning operations to apply, calls them, sees the result, then
-calls finish() when done.
-
-Key difference from analysis tools: cleaning tools MUTATE the dataframe.
-The dispatcher returns (updated_df, result, log_entries) and df is threaded
-through each call so mutations accumulate correctly.
-"""
 import pandas as pd
+from typing import Callable, Optional
 
 from analysis_engine.state import PipelineState, CleaningLogEntry
 from analysis_engine.llm.client import get_llm
+from analysis_engine.registry import RUN_CALLBACKS
 from analysis_engine.tools.data_io import load_dataframe, save_dataframe
 from analysis_engine.tools.cleaning_tools import dispatch_cleaning_tool, CLEANING_TOOLS
 from analysis_engine.tools.base import ToolResult
@@ -53,40 +44,60 @@ def _build_profile(df: pd.DataFrame) -> str:
     return "\n".join(lines)
 
 
-def cleaning_node(state: PipelineState) -> dict:
+def cleaning_node(
+    state: PipelineState,
+    event_callback: Optional[Callable[[str, dict], None]] = None,
+) -> dict:
+    if event_callback is None:
+        event_callback = RUN_CALLBACKS.get(state.run_id)
+
+    if event_callback:
+        event_callback("step_started", {"step": "cleaning", "message": "Cleaning and preparing data..."})
+
     if not state.files:
         print("[cleaning] no files in state, skipping")
+        if event_callback:
+            event_callback("step_completed", {"step": "cleaning"})
         return {"status": "analyzing"}
 
     all_log_entries: list[CleaningLogEntry] = []
     cleaned_refs: dict[str, str] = {}
-    question = getattr(state, "question", None)
+    question = state.question
     run_id = state.run_id
 
     for f in state.files:
         print(f"\n[cleaning] file_id={f.file_id} ref={f.ref}")
         df = load_dataframe(f.ref)
-
         profile = _build_profile(df)
         print(f"[cleaning] profile built ({df.shape[0]}r x {df.shape[1]}c)")
 
-        # thread df + log through tool calls — cleaning mutates state
         current_df = df
         file_log: list[CleaningLogEntry] = []
 
         def tool_dispatcher(tool_name: str, args: dict) -> ToolResult:
             nonlocal current_df, file_log
+            if event_callback:
+                event_callback("tool_called", {
+                    "node": "cleaning",
+                    "tool": tool_name,
+                    "args": {k: str(v)[:100] for k, v in args.items()},
+                })
             updated_df, result, new_logs = dispatch_cleaning_tool(
                 current_df, tool_name, args, run_id=run_id
             )
             current_df = updated_df
             file_log.extend(new_logs)
+            if event_callback:
+                event_callback("tool_result", {
+                    "node": "cleaning",
+                    "tool": tool_name,
+                    "output": result.output[:200],
+                })
             return result
 
         focus = (
             f'\nThe user\'s question is: "{question}". '
-            f'Keep it in mind when deciding what to clean — '
-            f'columns relevant to that question should be cleaned carefully.\n'
+            f'Keep it in mind when deciding what to clean.\n'
             if question else ""
         )
 
@@ -98,7 +109,7 @@ def cleaning_node(state: PipelineState) -> dict:
             tools=CLEANING_TOOLS,
             tool_dispatcher=tool_dispatcher,
             finish_tool_name="finish",
-            max_iterations=15,
+            max_iterations=30,
         )
 
         if finish_args:
@@ -110,6 +121,9 @@ def cleaning_node(state: PipelineState) -> dict:
         cleaned_refs[f.file_id] = out_ref
         all_log_entries.extend(file_log)
         print(f"[cleaning] wrote {out_ref} ({len(current_df)} rows, {len(file_log)} operations)")
+
+    if event_callback:
+        event_callback("step_completed", {"step": "cleaning"})
 
     return {
         "cleaning_log": all_log_entries,

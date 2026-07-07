@@ -5,41 +5,39 @@ from pathlib import Path
 from typing import Callable, Optional
 
 import pandas as pd
+from plotly.utils import PlotlyJSONEncoder
 
 from analysis_engine.state import PipelineState, Claim
 from analysis_engine.llm.client import get_llm
+from analysis_engine.registry import RUN_CALLBACKS
 from analysis_engine.tools.data_io import load_dataframe
 from analysis_engine.tools.analysis_tools import dispatch_tool, EXPLORE_TOOLS
 from analysis_engine.tools.base import ToolResult
 
-# where chart JSON files are saved — backend serves from here
-CHARTS_DIR = Path(os.environ.get("VERUM_CHARTS_DIR", "charts"))
-
-# global registry: run_id → event_callback
-# The web server registers here before invoking the graph so that
-# analysis_node can push live events back without any import cycles.
-RUN_CALLBACKS: dict[str, Callable[[str, dict], None]] = {}
-
+def _get_charts_dir() -> Path:
+    """Resolve lazily so VERUM_CHARTS_DIR set by app.py is always picked up."""
+    return Path(os.environ.get("VERUM_CHARTS_DIR", "charts"))
 
 SYSTEM_PROMPT = """You are a data analysis agent with tools for exploring data and generating charts.
 
-Rules:
-- Use the dedicated chart tools first: plot_grouped_bar, plot_scatter, plot_histogram.
-- Generate at least 4 charts covering different angles — distributions (histogram),
-  category comparisons (bar), and correlations (scatter).
-- px and go are pre-imported in run_code. Do NOT import them — just use them directly.
-- Use result = fig to capture a chart from run_code (not print).
-- print() works for debug output, but set result = <value> to return structured data.
-- Pick the right chart type: bar for comparisons, histogram for distributions,
-  scatter for correlations, line for time trends.
-- Always set a descriptive title and axis labels.
-- For every meaningful finding, generate a chart immediately after discovering it.
-- Call finish() when you have 3-5 strong insights with charts.
+STRICT RULES — violations cause the pipeline to fail:
+1. px and go are pre-imported globals. NEVER write import statements. Using import will cause an error.
+2. print() does not exist. Use result = <value> for ALL output.
+3. You MUST call finish() after at most 8 tool calls. Do not keep exploring indefinitely.
+4. Generate charts using run_code with px or go directly. Example:
+     result = px.bar(df.groupby('region')['revenue'].mean().reset_index(),
+                     x='region', y='revenue', title='Revenue by Region')
 
-If using run_code to generate charts with plotly.express (px):
-  - Distributions: result = px.histogram(df, x='col')
-  - Relationships: result = px.scatter(df, x='col1', y='col2')
-  - Categories: result = px.bar(grouped, x='cat', y='val')
+WORKFLOW:
+- Use describe_column, groupby_mean, correlation to discover insights (3-5 calls)
+- For each insight, immediately generate a chart with run_code (1 call per chart)
+- After 3-5 insights with charts, call finish() — do not delay
+
+Pick chart types by insight:
+  comparisons → px.bar()
+  distributions → px.histogram()
+  correlations → px.scatter()
+  time trends → px.line()
 """
 
 
@@ -68,10 +66,11 @@ def _make_user_prompt(profile: str, question: Optional[str]) -> str:
     return f"Dataset profile:\n\n{profile}\n{focus}\nStart exploring. Generate charts for every finding. Call finish() when done."
 
 
-def _save_chart(spec: dict, charts_dir: Path) -> str:
+def _save_chart(spec: dict) -> str:
+    charts_dir = _get_charts_dir()
     charts_dir.mkdir(parents=True, exist_ok=True)
     ref = f"chart-{uuid.uuid4()}.json"
-    (charts_dir / ref).write_text(json.dumps(spec))
+    (charts_dir / ref).write_text(json.dumps(spec, cls=PlotlyJSONEncoder))
     return ref
 
 
@@ -96,13 +95,16 @@ def analysis_node(
     state: PipelineState,
     event_callback: Optional[Callable[[str, dict], None]] = None,
 ) -> dict:
-    # If no callback supplied directly, check the global registry
-    # (populated by the web server before invoking the graph)
     if event_callback is None:
         event_callback = RUN_CALLBACKS.get(state.run_id)
 
+    if event_callback:
+        event_callback("step_started", {"step": "analyzing", "message": "Analyzing data..."})
+
     if not state.cleaned_refs:
         print("[analysis] no cleaned files, skipping")
+        if event_callback:
+            event_callback("step_completed", {"step": "analyzing"})
         return {"status": "verifying"}
 
     all_claims: list[Claim] = []
@@ -110,7 +112,6 @@ def analysis_node(
     all_chart_specs: dict[str, dict] = {}
     question = state.question
     run_id = state.run_id
-    charts_dir = CHARTS_DIR
 
     for file_id, cleaned_ref in state.cleaned_refs.items():
         print(f"\n[analysis] file_id={file_id}")
@@ -123,11 +124,20 @@ def analysis_node(
 
         def tool_dispatcher(tool_name: str, args: dict) -> ToolResult:
             if event_callback:
-                event_callback("tool_called", {"node": "analysis", "tool": tool_name, "args": {k: str(v)[:100] for k, v in args.items()}})
+                event_callback("tool_called", {
+                    "node": "analysis",
+                    "tool": tool_name,
+                    "args": {k: str(v)[:100] for k, v in args.items()},
+                })
             result = dispatch_tool(df, tool_name, args, run_id=run_id)
             file_tool_results.append(result)
             if event_callback:
-                event_callback("tool_result", {"node": "analysis", "tool": tool_name, "output": result.output[:200], "has_chart": result.chart_spec is not None})
+                event_callback("tool_result", {
+                    "node": "analysis",
+                    "tool": tool_name,
+                    "output": result.output[:200],
+                    "has_chart": result.chart_spec is not None,
+                })
             return result
 
         llm = get_llm()
@@ -137,13 +147,13 @@ def analysis_node(
             tools=EXPLORE_TOOLS,
             tool_dispatcher=tool_dispatcher,
             finish_tool_name="finish",
-            max_iterations=12,
+            max_iterations=20,
         )
 
-        # save charts from tool results
+        # collect charts from all tool results
         for result in file_tool_results:
             if result.chart_spec:
-                ref = _save_chart(result.chart_spec, charts_dir)
+                ref = _save_chart(result.chart_spec)
                 all_chart_refs.append(ref)
                 all_chart_specs[ref] = result.chart_spec
                 print(f"[analysis] chart saved: {ref}")
@@ -156,9 +166,40 @@ def analysis_node(
             for c in claims:
                 print(f"[analysis] claim: {c.text[:80]} (value={c.value})")
                 if event_callback:
-                    event_callback("claim_generated", {"text": c.text, "value": c.value, "metric": c.metric})
+                    event_callback("claim_generated", {
+                        "text": c.text,
+                        "value": c.value,
+                        "metric": c.metric,
+                        "source_columns": c.source_columns,
+                    })
         else:
-            print("[analysis] WARNING: explore loop ended without finish() call")
+            # loop ended without finish() — synthesise claims from charts we did collect
+            print("[analysis] WARNING: explore loop ended without finish() — generating claims from charts")
+            if event_callback:
+                event_callback("tool_result", {
+                    "node": "analysis",
+                    "tool": "warning",
+                    "output": "Explore loop hit iteration limit. Claims derived from collected charts.",
+                })
+            # emit at least one claim per chart so verification/synthesis has something to work with
+            for ref in all_chart_refs:
+                import uuid as _uuid
+                from analysis_engine.state import Claim as _Claim
+                c = _Claim(
+                    id=str(_uuid.uuid4()),
+                    text=f"Chart generated: {ref}",
+                    metric="chart",
+                    value=0.0,
+                    source_query="run_code (plotly)",
+                    source_columns=[],
+                    verification_status="unverifiable",
+                )
+                all_claims.append(c)
+                if event_callback:
+                    event_callback("claim_generated", {"text": c.text, "value": 0.0, "metric": "chart", "source_columns": []})
+
+    if event_callback:
+        event_callback("step_completed", {"step": "analyzing"})
 
     return {
         "claims": all_claims,

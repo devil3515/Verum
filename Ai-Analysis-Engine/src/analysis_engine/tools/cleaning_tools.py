@@ -49,8 +49,16 @@ def profile_column(df: pd.DataFrame, column: str) -> tuple[pd.DataFrame, ToolRes
                 "std": round(float(non_null.std()), 4) if len(non_null) > 1 else 0,
                 "iqr_outlier_count": int(outliers),
             })
+    elif pd.api.types.is_datetime64_any_dtype(s):
+        non_null = s.dropna()
+        stats.update({
+            "min": str(non_null.min()) if len(non_null) else None,
+            "max": str(non_null.max()) if len(non_null) else None,
+            "note": "datetime column — use run_code for trend analysis",
+        })
     else:
-        stats["top_values"] = s.value_counts().head(5).to_dict()
+        # str/object/bool — serialize keys as str so json.dumps never chokes on Timestamps
+        stats["top_values"] = {str(k): int(v) for k, v in s.value_counts().head(5).items()}
 
     return df, ToolResult("profile_column", json.dumps(stats, indent=2))
 

@@ -178,13 +178,33 @@ class _FakeLLMClient:
     def explore_loop(self, system_prompt, user_prompt, tools, tool_dispatcher,
                      finish_tool_name="finish", max_iterations=10):
         """
-        Fake explore loop: profiles the first column, then calls finish.
-        Works for both cleaning and analysis agents.
+        Fake explore loop — works for cleaning, analysis, and verification.
+        Detects which agent is calling based on tool names available.
         """
         import re
         cols = re.findall(r"`([^`]+)`", user_prompt)
         first_col = next((c for c in cols if "(" not in c), None)
 
+        tool_names = {t.get("function", {}).get("name") for t in tools}
+        is_cleaning     = "drop_nulls" in tool_names
+        is_verification = "recompute_groupby_mean" in tool_names
+
+        if is_verification:
+            # extract claim ids from prompt to produce fake verdicts
+            claim_ids = re.findall(r"id=([a-f0-9\-]{36})", user_prompt)
+            verdicts = [
+                {
+                    "claim_id":        cid,
+                    "status":          "confirmed",
+                    "confidence":      0.9,
+                    "reasoning":       "(fake LLM) recomputed value matches claimed value.",
+                    "recomputed_value": 0.0,
+                }
+                for cid in claim_ids
+            ]
+            return [], {"verdicts": verdicts}
+
+        # call a real profiling tool so tests get real tool events
         if first_col:
             try:
                 tool_dispatcher("profile_column", {"column": first_col})
@@ -196,20 +216,15 @@ class _FakeLLMClient:
                 except Exception:
                     pass
 
-        # finish args differ between cleaning and analysis agents
-        is_cleaning = any(
-            t.get("function", {}).get("name") == "drop_nulls"
-            for t in tools
-        )
         if is_cleaning:
             finish_args = {"summary": f"(fake LLM) profiled {first_col or 'columns'}, no changes needed."}
         else:
             finish_args = {
                 "claims": [{
-                    "text": f"(fake LLM) {first_col or 'a column'} showed notable variation.",
-                    "metric": f"{first_col or 'col'}_variation",
-                    "value": 0.0,
-                    "source_query": f"describe_column({first_col or 'col'})",
+                    "text":           f"(fake LLM) {first_col or 'a column'} showed notable variation.",
+                    "metric":         f"{first_col or 'col'}_variation",
+                    "value":          0.0,
+                    "source_query":   f"describe_column({first_col or 'col'})",
                     "source_columns": [first_col] if first_col else [],
                 }]
             }

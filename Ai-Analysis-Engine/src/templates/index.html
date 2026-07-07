@@ -90,18 +90,42 @@
 
     @keyframes pulse-badge { 0%,100%{opacity:1} 50%{opacity:.6} }
 
-    .content { flex:1; overflow-y:auto; padding:24px 28px; display:flex; gap:20px; }
+    .content { 
+      flex:1; 
+      overflow-y:auto; 
+      padding:28px 32px; 
+      display:flex; 
+      gap:28px; 
+      background: linear-gradient(180deg, var(--bg-void) 0%, rgba(15,15,20,1) 100%);
+    }
 
     /* cards */
     .card {
-      background: var(--bg-card); border:1px solid var(--border);
-      border-radius:14px; padding:20px;
+      background: var(--bg-card); 
+      border:1px solid var(--border);
+      border-radius:14px; 
+      padding:20px;
+      transition: box-shadow 0.2s ease;
+    }
+    .card:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     }
     .card-header {
       display:flex; align-items:center; justify-content:space-between;
       margin-bottom:16px;
+      padding-bottom:12px;
+      border-bottom:1px solid var(--border);
     }
-    .card-title { font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; color:var(--text-secondary); }
+    .card-title { 
+      font-size:14px; 
+      font-weight:600; 
+      text-transform:uppercase; 
+      letter-spacing:.08em; 
+      color:var(--text-secondary); 
+      display:flex;
+      align-items:center;
+      gap:8px;
+    }
 
     /* ── Left pane ───────────────────────────────────── */
     .left-pane { flex:1; display:flex;flex-direction:column;gap:20px;min-width:0; }
@@ -109,36 +133,151 @@
     /* upload card */
     .upload-zone {
       border: 2px dashed rgba(99,102,241,0.35);
-      border-radius:10px; padding:32px 20px;
-      text-align:center; cursor:pointer; transition: all .2s;
+      border-radius:12px; padding:40px 24px;
+      text-align:center; cursor:pointer; transition: all .25s ease;
+      background: linear-gradient(135deg, rgba(99,102,241,0.03) 0%, rgba(15,15,20,0.5) 100%);
     }
-    .upload-zone:hover { border-color:var(--accent); background:rgba(99,102,241,0.05); }
-    .upload-zone.dragover { border-color:var(--accent); background:rgba(99,102,241,0.08); }
-    .upload-icon { font-size:36px; margin-bottom:12px; }
-    .upload-label { font-size:14px; font-weight:500; color:var(--text-secondary); }
+    .upload-zone:hover { 
+      border-color:var(--accent); 
+      background:rgba(99,102,241,0.08);
+      transform: scale(1.01);
+    }
+    .upload-zone.dragover { 
+      border-color:var(--accent); 
+      background:rgba(99,102,241,0.12);
+      transform: scale(1.02);
+    }
+    .upload-icon { 
+      font-size:44px; 
+      margin-bottom:14px; 
+      display:block;
+      filter: grayscale(0.2);
+    }
+    .upload-label { 
+      font-size:15px; 
+      font-weight:500; 
+      color:var(--text-secondary); 
+    }
     .upload-label span { color:var(--accent-light); }
-    .upload-hint { font-size:12px; color:var(--text-muted); margin-top:4px; }
-    .file-chosen { display:flex; align-items:center; gap:8px; background:rgba(99,102,241,0.1); border-radius:8px; padding:10px 14px; margin-top:12px; font-size:13px; }
-    .file-chosen .remove { margin-left:auto; cursor:pointer; color:var(--text-muted); }
-
-    .input-group { margin-top:14px; }
-    .input-label { font-size:12px; font-weight:500; color:var(--text-secondary); margin-bottom:6px; display:block; }
-    .text-input {
-      width:100%; background:var(--bg-deep); border:1px solid var(--border);
-      border-radius:8px; padding:10px 14px; font-family:var(--sans); font-size:14px;
-      color:var(--text-primary); outline:none; transition:border .2s;
+    .upload-hint { font-size:13px; color:var(--text-muted); margin-top:6px; }
+    .file-chosen { 
+      display:flex; 
+      align-items:center; 
+      gap:10px; 
+      background:linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(99,102,241,0.06) 100%);
+      border:1px solid rgba(99,102,241,0.25);
+      border-radius:10px; 
+      padding:12px 16px; 
+      margin-top:14px; 
+      font-size:13px;
+      animation: fadeIn 0.2s ease;
     }
-    .text-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-glow); }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+    .file-chosen .remove { 
+      margin-left:auto; 
+      cursor:pointer; 
+      color:var(--text-muted); 
+      padding: 4px 8px;
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+    .file-chosen .remove:hover { 
+      color: #f87171; 
+      background: rgba(248, 113, 113, 0.1);
+    }
+
+    .input-group { margin-top:18px; }
+    .input-label { 
+      font-size:13px; 
+      font-weight:500; 
+      color:var(--text-secondary); 
+      margin-bottom:8px; 
+      display:block; 
+    }
+    .text-input {
+      width:100%; 
+      background:var(--bg-deep); 
+      border:1px solid var(--border);
+      border-radius:10px; 
+      padding:12px 16px; 
+      font-family:var(--sans); 
+      font-size:14px;
+      color:var(--text-primary); 
+      outline:none; 
+      transition:border .2s, box-shadow .2s;
+    }
+    .text-input:focus { 
+      border-color:var(--accent); 
+      box-shadow:0 0 0 3px rgba(99,102,241,0.15);
+    }
     .text-input::placeholder { color:var(--text-muted); }
 
     .run-btn {
-      width:100%; margin-top:16px; padding:13px;
-      background:linear-gradient(135deg,#6366f1,#4f46e5);
-      border:none; border-radius:10px; font-family:var(--sans); font-size:15px; font-weight:600;
-      color:#fff; cursor:pointer; transition: all .2s; letter-spacing:.02em;
+      width:100%; 
+      margin-top:20px; 
+      padding:16px 24px;
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #6366f1 100%);
+      background-size: 200% 200%;
+      border:none; 
+      border-radius:12px; 
+      font-family:var(--sans); 
+      font-size:16px; 
+      font-weight:600;
+      color:#fff; 
+      cursor:pointer; 
+      transition: all .3s ease; 
+      letter-spacing:.03em;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      box-shadow: 0 4px 15px rgba(99,102,241,0.3), 0 0 0 0 rgba(99,102,241,0.4);
+      animation: gradient-shift 3s ease infinite;
     }
-    .run-btn:hover { transform:translateY(-1px); box-shadow:0 8px 24px rgba(99,102,241,0.4); }
-    .run-btn:disabled { opacity:.5; cursor:not-allowed; transform:none; box-shadow:none; }
+    @keyframes gradient-shift {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+    }
+    .run-btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transition: left 0.6s ease;
+    }
+    .run-btn:hover { 
+      transform:translateY(-3px); 
+      box-shadow:0 12px 35px rgba(99,102,241,0.45), 0 0 20px rgba(99,102,241,0.25);
+    }
+    .run-btn:hover::before { left: 100%; }
+    .run-btn:active {
+      transform:translateY(-1px);
+      box-shadow:0 6px 20px rgba(99,102,241,0.35);
+    }
+    .run-btn:disabled { 
+      opacity:.45; 
+      cursor:not-allowed; 
+      transform:none; 
+      box-shadow:none;
+      animation: none;
+      background: #4a4a5a;
+    }
+    .run-btn .btn-icon {
+      font-size: 18px;
+    }
+    .run-btn.running {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      animation: pulse-glow 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 4px 15px rgba(16,185,129,0.3), 0 0 0 0 rgba(16,185,129,0.4); }
+      50% { box-shadow: 0 4px 20px rgba(16,185,129,0.5), 0 0 15px rgba(16,185,129,0.3); }
+    }
 
     /* pipeline tracker */
     .pipeline-track {
@@ -169,12 +308,34 @@
 
     /* console */
     .console {
-      background: var(--bg-void); border-radius:10px; padding:16px;
-      font-family:var(--mono); font-size:12.5px; line-height:1.7;
-      min-height:220px; max-height:310px; overflow-y:auto; position:relative;
+      background: var(--bg-void); 
+      border-radius:10px; 
+      padding:16px;
+      font-family: 'JetBrains Mono', var(--mono); 
+      font-size:12.5px; 
+      line-height:1.7;
+      min-height:220px; 
+      max-height:310px; 
+      overflow-y:auto; 
+      position:relative;
+      border: 1px solid var(--border);
     }
-    .console:empty::after { content:"Run an analysis to see live agent logs here..."; color:var(--text-muted); }
-    .log-line { padding:1px 0; word-break:break-all; }
+    .console:empty::after { 
+      content:"Run an analysis to see live agent logs here..."; 
+      color:var(--text-muted); 
+      display: block;
+      padding: 20px;
+    }
+    .log-line { 
+      padding:4px 8px; 
+      margin: 2px 0;
+      word-break:break-all;
+      border-radius: 4px;
+      transition: background 0.2s;
+    }
+    .log-line:hover {
+      background: rgba(255,255,255,0.03);
+    }
     .log-line.info    { color:#a5b4fc; }
     .log-line.success { color:#6ee7b7; }
     .log-line.warn    { color:#fbbf24; }
@@ -188,20 +349,80 @@
 
     /* insights */
     .insight-card {
-      border-left:3px solid var(--accent); border-radius:0 8px 8px 0;
-      padding:12px 14px; background:var(--bg-elevated); margin-bottom:10px;
+      border-left:3px solid var(--accent); 
+      border-radius: 0 8px 8px 0;
+      padding:14px 16px; 
+      background:var(--bg-elevated); 
+      margin-bottom:12px;
+      transition: all 0.2s ease;
     }
-    .insight-title { font-size:13px;font-weight:600; margin-bottom:4px; }
-    .insight-value { display:inline-block; font-size:12px; background:rgba(99,102,241,0.15); color:var(--accent-light); padding:2px 8px; border-radius:12px; margin-bottom:6px; font-family:var(--mono); }
-    .insight-desc  { font-size:12px; color:var(--text-secondary); line-height:1.5; }
+    .insight-card:hover {
+      background: rgba(99,102,241,0.08);
+      transform: translateX(4px);
+    }
+    .insight-title { 
+      font-size:14px;
+      font-weight:600; 
+      margin-bottom:6px; 
+      color: var(--text-primary);
+    }
+    .insight-value { 
+      display:inline-block; 
+      font-size:12px; 
+      background:rgba(99,102,241,0.15); 
+      color:var(--accent-light); 
+      padding:4px 10px; 
+      border-radius:12px; 
+      margin-bottom:8px; 
+      font-family: 'JetBrains Mono', var(--mono); 
+      font-weight: 500;
+    }
+    .insight-desc  { 
+      font-size:13px; 
+      color:var(--text-secondary); 
+      line-height:1.6; 
+    }
 
     /* charts */
-    .charts-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(400px,1fr)); gap:20px; }
-    .chart-wrapper {
-      background:var(--bg-elevated); border:1px solid var(--border);
-      border-radius:12px; overflow:hidden;
+    .charts-grid { 
+      display:grid; 
+      grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); 
+      gap:24px; 
+      width:100%;
+      max-width:100%;
     }
-    .chart-title { padding:12px 14px 0; font-size:13px; font-weight:500; color:var(--text-secondary); }
+    .chart-wrapper {
+      background:var(--bg-elevated); 
+      border:1px solid var(--border);
+      border-radius:12px; 
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .chart-wrapper:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2), 0 4px 6px -2px rgba(0,0,0,0.1);
+    }
+    .chart-title { 
+      padding:16px 16px 12px; 
+      font-size:14px; 
+      font-weight:600; 
+      color:var(--text-secondary); 
+      border-bottom:1px solid var(--border);
+      background:rgba(0,0,0,0.2);
+    }
+    .chart-container {
+      flex:1;
+      min-height:320px;
+      max-height:400px;
+      padding:12px;
+    }
+    .chart-container .plotly {
+      width:100% !important;
+      height:100% !important;
+    }
 
     .report-body { font-size:14px; line-height:1.8; color:var(--text-secondary); }
     .report-body h1,.report-body h2,.report-body h3 { color:var(--text-primary); margin:16px 0 8px; }
@@ -209,8 +430,22 @@
     .report-body li { margin-bottom:6px; }
 
     /* empty states */
-    .empty-state { padding:40px 0; text-align:center; color:var(--text-muted); font-size:13px; }
-    .empty-state .icon { font-size:32px; margin-bottom:10px; }
+    .empty-state { 
+      padding:48px 24px; 
+      text-align:center; 
+      color:var(--text-muted); 
+      font-size:14px;
+      background: rgba(99,102,241,0.03);
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+      margin: 8px 0;
+    }
+    .empty-state .icon { 
+      font-size:40px; 
+      margin-bottom:12px; 
+      display:block;
+      opacity: 0.7;
+    }
 
     /* scrollbars */
     ::-webkit-scrollbar { width:5px; }
@@ -283,7 +518,10 @@
             <label class="input-label">Research Question <span style="color:var(--text-muted)">(optional)</span></label>
             <input class="text-input" id="question" placeholder="e.g. Which region has the highest revenue?" />
           </div>
-          <button class="run-btn" id="run-btn" disabled>Run Analysis</button>
+          <button class="run-btn" id="run-btn" disabled>
+            <span class="btn-icon">🚀</span>
+            <span class="btn-text">Run Analysis</span>
+          </button>
         </div>
 
         <!-- pipeline tracker -->
@@ -527,7 +765,7 @@ async function renderChart(ref) {
     wrapper.appendChild(title);
 
     const plotDiv = document.createElement('div');
-    plotDiv.style.height = '320px';
+    plotDiv.className = 'chart-container';
     wrapper.appendChild(plotDiv);
     chartsContainer.appendChild(wrapper);
 
@@ -549,13 +787,36 @@ async function renderChart(ref) {
       title: undefined,
       paper_bgcolor: 'rgba(0,0,0,0)',
       plot_bgcolor:  'rgba(0,0,0,0)',
-      font: { color: '#9090a8', family: 'Inter' },
-      xaxis: { ...(spec.layout?.xaxis || {}), gridcolor: '#1a1a2a', color: '#9090a8' },
-      yaxis: { ...(spec.layout?.yaxis || {}), gridcolor: '#1a1a2a', color: '#9090a8' },
-      margin: { t: 10, l: 50, r: 20, b: 50 },
+      font: { color: '#a1a1aa', family: 'Inter, sans-serif' },
+      xaxis: { 
+        ...(spec.layout?.xaxis || {}), 
+        gridcolor: 'rgba(255,255,255,0.06)', 
+        color: '#a1a1aa',
+        tickfont: { size: 11 }
+      },
+      yaxis: { 
+        ...(spec.layout?.yaxis || {}), 
+        gridcolor: 'rgba(255,255,255,0.06)', 
+        color: '#a1a1aa',
+        tickfont: { size: 11 }
+      },
+      margin: { t: 20, l: 60, r: 30, b: 60 },
+      showlegend: plotTraces.length > 1,
+      legend: { 
+        orientation: 'h', 
+        y: -0.15, 
+        x: 0.5, 
+        xanchor: 'center',
+        font: { color: '#a1a1aa', size: 11 }
+      }
     };
 
-    Plotly.newPlot(plotDiv, plotTraces, darkLayout, { displayModeBar: false, responsive: true });
+    // Use react for initial render (faster than newPlot)
+    Plotly.react(plotDiv, plotTraces, darkLayout, { 
+      displayModeBar: false, 
+      responsive: false,
+      scrollZoom: false
+    });
   } catch (e) {
     console.error('Chart render failed:', e);
   }
@@ -596,96 +857,6 @@ function setBadge(state, text) {
   b.textContent = text;
 }
 
-// ── SSE event handler ─────────────────────────────────────────────────────────
-function handleEvent(ev) {
-  const data = JSON.parse(ev.data);
-  const t = data.type;
-
-  if (t === 'run_started') {
-    addLog(`▶ Run started: ${data.run_id}`, 'info');
-    setBadge('running', 'Running');
-    $('upload-shimmer').classList.add('active');
-    setCurrentStep('planning');
-  }
-
-  if (t === 'tool_called') {
-    const node = data.node;
-    if (node === 'analysis') setCurrentStep('analyzing');
-    const argsStr = data.args ? Object.entries(data.args).map(([k,v]) => `${k}=${v}`).join(', ') : '';
-    addLog(`  [explore] ${data.tool}(${argsStr})`, 'explore');
-  }
-
-  if (t === 'tool_result') {
-    const short = (data.output || '').split('\n')[0].slice(0, 100);
-    addLog(`    → ${short}`, 'muted');
-  }
-
-  if (t === 'chart_generated') {
-    addLog(`  ✦ Chart generated: ${data.ref}`, 'success');
-    renderChart(data.ref);
-  }
-
-  if (t === 'claim_generated') {
-    addLog(`  ✧ Claim: ${data.text.slice(0,80)}…`, 'success');
-    addInsight(data);
-  }
-
-  if (t === 'run_complete') {
-    $('upload-shimmer').classList.remove('active');
-    setAllDone();
-    setBadge('done', 'Done');
-    addLog('✅ Analysis complete.', 'success');
-
-    // render report
-    if (data.report) {
-      $('report-card').style.display = 'block';
-      $('report-body').innerHTML = marked.parse(data.report);
-    }
-
-    // render any claims not yet streamed (from run_complete payload)
-    if (data.claims && insightCount === 0) {
-      data.claims.forEach(addInsight);
-    }
-
-    // render chart refs if not yet streamed (or re-render if streaming failed)
-    if (data.chart_refs?.length) {
-      if (chartCount === 0) {
-        data.chart_refs.forEach(renderChart);
-      } else if (chartCount < data.chart_refs.length) {
-        data.chart_refs.slice(chartCount).forEach(renderChart);
-      }
-    }
-
-    // cleaning log
-    if (data.cleaning_log?.length) {
-      $('cleaning-card').style.display = 'block';
-      $('cleaning-log').innerHTML = data.cleaning_log.map(e =>
-        `<div>• <b>${e.operation}</b>: ${escHtml(e.rationale)}</div>`
-      ).join('');
-    }
-
-    $('run-btn').disabled = false;
-    $('run-btn').textContent = 'Run Again';
-  }
-
-  if (t === 'run_error') {
-    $('upload-shimmer').classList.remove('active');
-    setBadge('', 'Error');
-    addLog('❌ Error: ' + data.message, 'warn');
-    $('run-btn').disabled = false;
-  }
-}
-
-// Map pipeline status strings from backend → UI step names
-const STATUS_STEP_MAP = {
-  planning:    'planning',
-  cleaning:    'cleaning',
-  analyzing:   'analyzing',
-  verifying:   'verifying',
-  synthesizing:'report',
-  done:        'report',
-};
-
 // ── Run button ────────────────────────────────────────────────────────────────
 $('run-btn').addEventListener('click', async () => {
   if (!selectedFile) return;
@@ -699,35 +870,112 @@ $('run-btn').addEventListener('click', async () => {
   $('report-card').style.display   = 'none';
   $('cleaning-card').style.display = 'none';
   $('run-btn').disabled = true;
-  $('run-btn').textContent = 'Running…';
+  $('run-btn').querySelector('.btn-text').textContent = 'Running…';
+  $('run-btn').querySelector('.btn-icon').textContent = '⏳';
   $('claim-count').textContent = '0 insights';
   $('chart-count').textContent = '0 charts';
 
+  // Step 1: POST the file — get back run_id
   const formData = new FormData();
   formData.append('file', selectedFile);
   formData.append('question', $('question').value.trim());
 
-  const response = await fetch('/api/run', { method: 'POST', body: formData });
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop(); // keep incomplete last line
-
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        try {
-          const fakeEvent = { data: line.slice(6) };
-          handleEvent(fakeEvent);
-        } catch {}
-      }
-    }
+  let runId;
+  try {
+    const res = await fetch('/api/start', { method: 'POST', body: formData });
+    const json = await res.json();
+    runId = json.run_id;
+  } catch (err) {
+    addLog('❌ Failed to start run: ' + err.message, 'warn');
+    $('run-btn').disabled = false;
+    $('run-btn').querySelector('.btn-text').textContent = 'Run Analysis';
+    $('run-btn').querySelector('.btn-icon').textContent = '🚀';
+    return;
   }
+
+  addLog(`▶ Run started: ${runId}`, 'info');
+  setBadge('running', 'Running');
+  $('upload-shimmer').classList.add('active');
+  setCurrentStep('planning');
+
+  // Step 2: Connect EventSource to the SSE stream for this run_id
+  const es = new EventSource(`/api/stream/${runId}`);
+
+  function attachHandler(eventName, handler) {
+    es.addEventListener(eventName, e => {
+      try { handler(JSON.parse(e.data)); } catch {}
+    });
+  }
+
+  attachHandler('step_started', data => {
+    setCurrentStep(data.step);
+    addLog(`▶ ${data.message || data.step}`, 'info');
+  });
+
+  attachHandler('step_completed', data => {
+    addLog(`✓ Completed: ${data.step}`, 'success');
+  });
+
+  attachHandler('tool_called', data => {
+    const argsStr = data.args
+      ? Object.entries(data.args).map(([k,v]) => `${k}=${v}`).join(', ')
+      : '';
+    addLog(`  [${data.node}] ${data.tool}(${argsStr})`, 'explore');
+  });
+
+  attachHandler('tool_result', data => {
+    const short = (data.output || '').split('\n')[0].slice(0, 100);
+    addLog(`    → ${short}`, 'muted');
+  });
+
+  attachHandler('chart_generated', data => {
+    addLog(`  ✦ Chart generated`, 'success');
+    renderChart(data.ref);
+  });
+
+  attachHandler('claim_generated', data => {
+    addLog(`  ✧ ${data.text.slice(0, 80)}…`, 'success');
+    addInsight(data);
+  });
+
+  attachHandler('run_complete', data => {
+    es.close();
+    $('upload-shimmer').classList.remove('active');
+    setAllDone();
+    setBadge('done', 'Done');
+    addLog('✅ Analysis complete.', 'success');
+
+    if (data.report) {
+      $('report-card').style.display = 'block';
+      $('report-body').innerHTML = marked.parse(data.report);
+    }
+    if (data.claims && insightCount === 0) data.claims.forEach(addInsight);
+    if (data.chart_refs?.length && chartCount === 0) data.chart_refs.forEach(renderChart);
+    if (data.cleaning_log?.length) {
+      $('cleaning-card').style.display = 'block';
+      $('cleaning-log').innerHTML = data.cleaning_log.map(e =>
+        `<div>• <b>${e.operation}</b>: ${escHtml(e.rationale)}</div>`
+      ).join('');
+    }
+    $('run-btn').disabled = false;
+    $('run-btn').querySelector('.btn-text').textContent = 'Run Again';
+    $('run-btn').querySelector('.btn-icon').textContent = '🚀';
+  });
+
+  attachHandler('run_error', data => {
+    es.close();
+    $('upload-shimmer').classList.remove('active');
+    setBadge('', 'Error');
+    addLog('❌ Error: ' + data.message, 'warn');
+    $('run-btn').disabled = false;
+    $('run-btn').querySelector('.btn-text').textContent = 'Run Analysis';
+    $('run-btn').querySelector('.btn-icon').textContent = '🚀';
+  });
+
+  es.onerror = () => {
+    // EventSource auto-reconnects — only bail if run was already complete
+    if ($('status-badge').textContent === 'Done') es.close();
+  };
 });
 </script>
 </body>

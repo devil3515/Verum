@@ -83,10 +83,16 @@ def run_sandbox_code(
             run_id=run_id,
             agent=agent,
         )
-        return ToolResult(
-            tool_name="run_code",
-            output=f"Code blocked by safety guard:\n{summary}"
-        )
+        # Give the model actionable guidance, not just "blocked"
+        if "blocked_import" in summary or "__import__" in summary:
+            guidance = (
+                "Import blocked. px, go, pd, np are already available as globals — "
+                "use them directly without any import statement.\n"
+                "Example: result = px.bar(df, x='col', y='val', title='My Chart')"
+            )
+        else:
+            guidance = f"Code blocked by safety guard:\n{summary}"
+        return ToolResult(tool_name="run_code", output=guidance)
 
     # Execute in sandbox
     exec_result = execute_sandbox_code(code=code, df=df, config=DEFAULT_CONFIG)
