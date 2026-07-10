@@ -1,25 +1,24 @@
 """
 Verification tools — Stage A: internal recomputation.
- 
+
 The LLM wrote claims with values it observed from tool outputs. We now
 independently re-derive those values from the cleaned dataframe to confirm
 they're actually correct — not hallucinated or misremembered across turns.
- 
+
 Same tool-loop pattern as cleaning and analysis:
   profile → tool loop → finish()
- 
+
 The LLM gets each claim's source_query and calls the matching recompute
 tool. We compare the recomputed value to the claimed value within a
 tolerance. Mismatch → contradicted. Match → confirmed.
 """
-
 import json
-
 import pandas as pd
 
 from analysis_engine.tools.base import ToolResult
 
-TOLERANCE = 0.02
+
+TOLERANCE = 0.02   # 2% relative tolerance — allows for float rounding
 
 
 def _pct_diff(a: float, b: float) -> float:
@@ -33,7 +32,9 @@ def _pct_diff(a: float, b: float) -> float:
 # so the LLM knows they're for verification, not new exploration
 # ---------------------------------------------------------------------------
 
-def recompute_groupby_mean( df: pd.DataFrame, value_col: str, group_col: str, group_value: str) -> ToolResult:
+def recompute_groupby_mean(
+    df: pd.DataFrame, value_col: str, group_col: str, group_value: str
+) -> ToolResult:
     for c in [value_col, group_col]:
         if c not in df.columns:
             return ToolResult("recompute_groupby_mean", f"Column '{c}' not found.")
@@ -44,7 +45,7 @@ def recompute_groupby_mean( df: pd.DataFrame, value_col: str, group_col: str, gr
             f"Group '{group_value}' not found in '{group_col}'. "
             f"Available: {result.index.tolist()}"
         )
-    val = round(float(result[group_value]),4)
+    val = round(float(result[group_value]), 4)
     return ToolResult("recompute_groupby_mean", json.dumps({
         "value_col": value_col,
         "group_col": group_col,
@@ -63,8 +64,8 @@ def recompute_column_mean(df: pd.DataFrame, column: str) -> ToolResult:
         "recomputed_mean": val,
         "count": int(df[column].dropna().count()),
     }, indent=2))
- 
- 
+
+
 def recompute_correlation(df: pd.DataFrame, col1: str, col2: str) -> ToolResult:
     for c in [col1, col2]:
         if c not in df.columns:
@@ -75,32 +76,41 @@ def recompute_correlation(df: pd.DataFrame, col1: str, col2: str) -> ToolResult:
         "col2": col2,
         "recomputed_correlation": val,
     }, indent=2))
- 
- 
+
+
 def recompute_count(df: pd.DataFrame, column: str, condition: str) -> ToolResult:
     """
-    condition: a simple pandas-style filter string, e.g. "> 0", "== True"
-    Safely evaluated against the column only — not arbitrary exec.
+    condition examples: "> 0", "< 100", ">= 1", "== True"
+    For string equality use recompute_value_count instead.
     """
     if column not in df.columns:
         return ToolResult("recompute_count", f"Column '{column}' not found.")
     try:
-        # safe: only column series operations, no exec
         series = df[column]
         op = condition.strip()
-        if op.startswith("> "):
+        if op.startswith(">= "):
+            mask = series >= float(op[3:])
+        elif op.startswith("<= "):
+            mask = series <= float(op[3:])
+        elif op.startswith("> "):
             mask = series > float(op[2:])
         elif op.startswith("< "):
             mask = series < float(op[2:])
         elif op.startswith("== "):
-            val = op[3:].strip()
-            mask = series == (True if val == "True" else False if val == "False" else val)
-        elif op.startswith(">= "):
-            mask = series >= float(op[3:])
-        elif op.startswith("<= "):
-            mask = series <= float(op[3:])
+            val = op[3:].strip().strip('"').strip("'")
+            if val == "True":
+                mask = series == True
+            elif val == "False":
+                mask = series == False
+            else:
+                try:
+                    mask = series == float(val)
+                except ValueError:
+                    mask = series == val
         else:
-            return ToolResult("recompute_count", f"Unsupported condition format: '{condition}'")
+            return ToolResult("recompute_count",
+                f"Unsupported condition: '{condition}'. "
+                "For string matching use recompute_value_count instead.")
         count = int(mask.sum())
         return ToolResult("recompute_count", json.dumps({
             "column": column,
@@ -108,13 +118,37 @@ def recompute_count(df: pd.DataFrame, column: str, condition: str) -> ToolResult
             "recomputed_count": count,
         }, indent=2))
     except Exception as e:
-        return ToolResult("recompute_count", f"Error evaluating condition: {e}")
- 
- 
+        return ToolResult("recompute_count", f"Error: {e}")
+
+
+def recompute_value_count(df: pd.DataFrame, column: str, value: str) -> ToolResult:
+    """
+    Count rows where column exactly matches a string value.
+    Case-insensitive — handles 'Sedan', 'SEDAN', 'sedan' all the same.
+    Also returns close matches to help diagnose mismatches.
+    """
+    if column not in df.columns:
+        return ToolResult("recompute_value_count", f"Column '{column}' not found.")
+
+    exact = int((df[column] == value).sum())
+    lower = int((df[column].astype(str).str.lower() == value.lower()).sum())
+
+    # show top actual values so LLM knows what strings exist
+    top = {str(k): int(v) for k, v in df[column].value_counts().head(10).items()}
+
+    return ToolResult("recompute_value_count", json.dumps({
+        "column": column,
+        "searched_value": value,
+        "exact_match_count": exact,
+        "case_insensitive_count": lower,
+        "top_10_actual_values": top,
+    }, indent=2))
+
+
 # ---------------------------------------------------------------------------
 # Dispatcher
 # ---------------------------------------------------------------------------
- 
+
 def dispatch_verification_tool(
     df: pd.DataFrame, tool_name: str, args: dict
 ) -> ToolResult:
@@ -125,7 +159,14 @@ def dispatch_verification_tool(
         "recompute_column_mean": lambda: recompute_column_mean(df, args["column"]),
         "recompute_correlation":  lambda: recompute_correlation(df, args["col1"], args["col2"]),
         "recompute_count":        lambda: recompute_count(df, args["column"], args["condition"]),
+        "recompute_value_count":  lambda: recompute_value_count(df, args["column"], args["value"]),
     }
+
+    #Web search needs to be handeled dfferently because it dont need dataframe.
+    if tool_name == "web_search":
+        from analysis_engine.tools.web_search import web_search as _web_search
+        return _web_search(args["query"])
+
     fn = dispatch.get(tool_name)
     if not fn:
         return ToolResult(tool_name, f"Unknown verification tool: '{tool_name}'")
@@ -133,12 +174,12 @@ def dispatch_verification_tool(
         return fn()
     except Exception as e:
         return ToolResult(tool_name, f"Tool error: {e}")
- 
- 
+
+
 # ---------------------------------------------------------------------------
 # OpenAI tool definitions
 # ---------------------------------------------------------------------------
- 
+
 VERIFICATION_TOOLS = [
     {
         "type": "function",
@@ -206,8 +247,23 @@ VERIFICATION_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "recompute_value_count",
+            "description": "Count rows where a column matches a specific string value. Case-insensitive. Use this for claims like 'there are 660,172 Sedans' or 'Driver Inattention is the top factor'. Returns top 10 actual values so you can see exact spellings.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "column": {"type": "string"},
+                    "value":  {"type": "string", "description": "The string value to count"},
+                },
+                "required": ["column", "value"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "finish",
-            "description": "Call when all claims have been verified. Return verdict for each claim.",
+            "description": "REQUIRED: Call this once after verifying all claims. You MUST call this even if some claims are unverifiable. Do not stop without calling finish().",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -232,6 +288,27 @@ VERIFICATION_TOOLS = [
                 "required": ["verdicts"]
             }
         }
+    },
+    {
+    "type": "function",
+    "function":{
+        "name": "web_Search",
+        "descrption":(
+             "Search the web to find external context for a claim that references "
+            "industry trends, market conditions, or other external facts. "
+            "Do NOT use this to verify internal data numbers — use recompute_* tools for those. "
+            "Only use for claims like 'consistent with industry trends' or 'reflects a market-wide pattern'."
+        ),
+        "parameters":{
+            "type": "object",
+            "properties": {
+                "query":{
+                    "type": "string",
+                    "description": "Specific search query. Be precise — include dates, industry, region if relevant."
+                }
+            },
+            "required": ["query"]
+        }
     }
+}
 ]
- 

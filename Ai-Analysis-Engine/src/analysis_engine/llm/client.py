@@ -92,8 +92,23 @@ class LLMClient:
         ]
 
         finish_args = None
+        budget_warning_sent = False
 
         for iteration in range(max_iterations):
+
+            # at 80% of budget, inject a system message forcing finish()
+            if not budget_warning_sent and iteration >= int(max_iterations * 0.8):
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        f"[BUDGET WARNING] You have used {iteration} of {max_iterations} "
+                        f"allowed tool calls. You MUST call {finish_tool_name}() NOW with "
+                        "verdicts/claims for everything processed so far. "
+                        "Do not make any more tool calls except finish()."
+                    )
+                })
+                budget_warning_sent = True
+
             response = self._client.chat.completions.create(
                 model=self.config.model,
                 messages=messages,
@@ -168,6 +183,19 @@ class _FakeLLMClient:
                 steps=["clean_data", "run_analysis", "verify_claims", "synthesize_report"],
                 reasoning="(fake LLM) standard tabular analysis request.",
             )
+        if schema.__name__ == "SynthesisOutput":
+            return schema(
+                executive_summary="(fake LLM) The dataset was analyzed and key findings were identified.",
+                data_quality_notes="(fake LLM) Minor cleaning was applied including duplicate removal.",
+                findings=[{
+                    "heading": "Notable variation detected",
+                    "body": "(fake LLM) The primary metric showed notable variation across the dataset.",
+                    "chart_ref": "",
+                    "status": "confirmed",
+                }],
+                contradicted_claims=[],
+                caveats="(fake LLM) Results based on a small sample dataset.",
+            )
         raise NotImplementedError(
             f"_FakeLLMClient has no canned response for schema {schema.__name__}"
         )
@@ -188,6 +216,7 @@ class _FakeLLMClient:
         tool_names = {t.get("function", {}).get("name") for t in tools}
         is_cleaning     = "drop_nulls" in tool_names
         is_verification = "recompute_groupby_mean" in tool_names
+        is_chat         = "answer" in tool_names
 
         if is_verification:
             # extract claim ids from prompt to produce fake verdicts
@@ -203,6 +232,13 @@ class _FakeLLMClient:
                 for cid in claim_ids
             ]
             return [], {"verdicts": verdicts}
+
+        if is_chat:
+            return [], {
+                "text": f"(fake LLM) Based on the data, {first_col or 'the dataset'} shows notable patterns.",
+                "citations": [{"tool_name": "describe_column", "result_summary": f"(fake) stats for {first_col}"}],
+                "follow_up_suggestions": ["What is the average value?", "Show me a chart of this."],
+            }
 
         # call a real profiling tool so tests get real tool events
         if first_col:

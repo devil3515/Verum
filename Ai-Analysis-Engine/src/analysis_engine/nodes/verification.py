@@ -16,23 +16,40 @@ from analysis_engine.tools.base import ToolResult
 
 
 SYSTEM_PROMPT = """You are a verification agent. Your job is to independently
-recompute the values behind each claim using the provided tools, then call
-finish() with a verdict for every claim.
+verify each claim using the provided tools, then call finish() with verdicts.
 
-Rules:
-- For each claim, call the matching recompute tool (e.g. recompute_groupby_mean,
-  recompute_correlation, recompute_count) based on the claim's source_query.
-- If the recomputed value is within 2% of the claimed value → confirmed.
-- If it differs by more than 2% → contradicted.
-- If you cannot recompute it (e.g. it references external context) → unverifiable.
-- Always call finish() with a verdict for EVERY claim, even if unverifiable.
-- Never skip a claim.
+STRICT RULES:
+- Call finish() exactly once after all claims are evaluated.
+- finish() must include a verdict for EVERY claim.
+- Never stop without calling finish().
+
+VERIFICATION STRATEGY:
+1. For numeric claims (means, counts, correlations):
+   → Use recompute_groupby_mean, recompute_column_mean, recompute_correlation,
+     recompute_count, or recompute_value_count.
+   → If recomputed value is within 2% of claimed value → confirmed.
+   → If it differs by more than 2% → contradicted.
+
+2. For string/category claims ("top factor is X", "most common value is Y"):
+   → Use recompute_value_count — it handles case-insensitive matching and
+     shows actual spellings so you don't waste calls guessing the exact string.
+
+3. For externally-referenced claims ("consistent with industry trends",
+   "reflects market-wide patterns", "aligns with seasonal data"):
+   → Use web_search to find supporting or contradicting evidence.
+   → Classify each source as supports/contradicts/neutral in your reasoning.
+
+4. If you genuinely cannot verify a claim with any tool → unverifiable.
+
+BUDGET: Use at most {budget} tool calls total, then call finish().
 """
 
 
 def _build_prompt(claims: list[Claim], df_columns: list[str]) -> str:
     lines = [
         f"Available columns: {df_columns}",
+        f"Total claims to verify: {len(claims)}",
+        f"Tool budget: {len(claims) * 4} calls maximum — then you MUST call finish().",
         "",
         "Claims to verify:",
     ]
@@ -44,7 +61,10 @@ def _build_prompt(claims: list[Claim], df_columns: list[str]) -> str:
             f"  source_query: {c.source_query}\n"
             f"  source_columns: {c.source_columns}\n"
         )
-    lines.append("\nRecompute each claim and call finish() with your verdicts.")
+    lines.append(
+        "\nIMPORTANT: After using your tool budget, call finish() immediately with verdicts "
+        "for ALL claims. Never leave a claim without a verdict. If unsure, mark it unverifiable."
+    )
     return "\n".join(lines)
 
 
@@ -135,14 +155,15 @@ def verification_node(
             })
         return result
 
+    budget = len(state.claims) * 5 + 4
     llm = get_llm()
     _, finish_args = llm.explore_loop(
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=SYSTEM_PROMPT.format(budget=budget),
         user_prompt=_build_prompt(state.claims, df_columns),
         tools=VERIFICATION_TOOLS,
         tool_dispatcher=tool_dispatcher,
         finish_tool_name="finish",
-        max_iterations=len(state.claims) * 3 + 2,  # roughly 3 tool calls per claim
+        max_iterations=budget,
     )
 
     if finish_args and "verdicts" in finish_args:
@@ -168,5 +189,3 @@ def verification_node(
         })
 
     return {"claims": updated_claims, "status": "synthesizing"}
-
-

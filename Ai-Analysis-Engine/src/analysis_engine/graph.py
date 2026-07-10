@@ -10,33 +10,7 @@ from analysis_engine.nodes.planner import planner_node
 from analysis_engine.nodes.cleaning import cleaning_node
 from analysis_engine.nodes.analysis import analysis_node
 from analysis_engine.nodes.verification import verification_node
-
-
-
-
-def synthesis_node(state: PipelineState) -> dict:
-    event_callback = RUN_CALLBACKS.get(state.run_id)
-
-    if event_callback:
-        event_callback("step_started", {"step": "report", "message": "Generating final report..."})
-
-    print(f"[synthesis] assembling report, {len(state.claims)} claim(s)")
-    lines = ["# Analysis Report\n"]
-    if state.question:
-        lines.append(f"**Question:** {state.question}\n")
-    if state.claims:
-        lines.append("## Key Findings\n")
-        for c in state.claims:
-            icon = "✅" if c.verification_status == "confirmed" else "⚠️"
-            lines.append(f"{icon} {c.text}")
-            lines.append(f"   - Value: `{c.value}` · Status: *{c.verification_status}*\n")
-    else:
-        lines.append("_No claims generated._")
-
-    if event_callback:
-        event_callback("step_completed", {"step": "report"})
-
-    return {"report": "\n".join(lines), "status": "done"}
+from analysis_engine.nodes.synthesis import synthesis_node
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +28,6 @@ def route_after_analysis(state: PipelineState) -> str:
 def route_after_verification(state: PipelineState) -> str:
     has_contradicted = any(c.verification_status == "contradicted" for c in state.claims)
     return "analysis" if has_contradicted else "synthesis"
-
 
 
 # ---------------------------------------------------------------------------
