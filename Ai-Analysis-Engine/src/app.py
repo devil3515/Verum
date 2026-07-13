@@ -29,6 +29,7 @@ from analysis_engine.agent.chat_agent import run_chat_turn
 from analysis_engine.graph import build_graph
 from analysis_engine.state import PipelineState, FileMeta
 from analysis_engine.registry import RUN_CALLBACKS
+from analysis_engine.db import init_db
 
 # ── config ────────────────────────────────────────────────────────────────────
 BASE_DIR   = Path(__file__).parent.parent          # project root
@@ -58,6 +59,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.on_event("startup")
+async def startup_event():
+    init_db()
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
