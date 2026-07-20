@@ -33,11 +33,11 @@ class User(Base):
 
 
 
-class Runs(Base):
+class Run(Base):
     __tablename__ = "runs"
 
     id = Column(String(36), primary_key=True, default=_uuid)
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
     filename = Column(String(255), nullable=False)
     question = Column(Text, nullable=True)
     status = Column(
@@ -55,8 +55,9 @@ class Runs(Base):
     report = Column(Text, nullable=True)
 
     user = relationship("User", back_populates="runs")
-    events = relationship("RunEvent", back_populates="run",order_by="RunEvent.id", cascade="all, delete-orphan")
+    events = relationship("RunEvent", back_populates="run", order_by="RunEvent.id", cascade="all, delete-orphan")
     claims = relationship("Claim", back_populates="run", order_by="Claim.id", cascade="all, delete-orphan")
+    charts = relationship("Chart", back_populates="run", order_by="Chart.id", cascade="all, delete-orphan")
     cleaning_log = relationship("CleaningLogEntry", back_populates="run", order_by="CleaningLogEntry.id", cascade="all, delete-orphan")
     chat_session = relationship("ChatSession", back_populates="run", uselist=False, cascade="all, delete-orphan")
 
@@ -71,7 +72,7 @@ class Claim(Base):
     value = Column(Float, nullable=True)
     source_query = Column(Text, nullable=True)
     source_columns = Column(JSON, nullable=True)
-    verification_Status = Column(
+    verification_status = Column(
          SAEnum("unverified", "confirmed", "contradicted", "unverifiable",
                name="verification_status"),
         default="unverified", nullable=False,
@@ -127,8 +128,8 @@ class CleaningLogEntry(Base):
 class ChatSession(Base):
     __tablename__ = "chat_sessions"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    id = Column(String(36), primary_key=True, default=_uuid)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
     run_id = Column(String(36), ForeignKey("runs.id"), nullable=True)
     title = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), default=_now)
@@ -141,11 +142,11 @@ class ChatSession(Base):
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(Integer, ForeignKey("chat_sessions.id"), nullable=False)
+    id = Column(String(36), primary_key=True, default=_uuid)
+    session_id = Column(String(36), ForeignKey("chat_sessions.id"), nullable=False)
     role = Column(SAEnum("system", "user", "assistant", name="chat_role"), nullable=False)
     content = Column(Text, nullable=False)
-    chart_ref = Column(JSON, nullable=True)
+    chart_refs = Column(JSON, nullable=True)
     citations = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), default=_now)
 

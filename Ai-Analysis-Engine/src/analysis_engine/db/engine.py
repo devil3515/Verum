@@ -23,7 +23,6 @@ def get_session() -> Session:
     try:
         yield session
         session.commit()
-        raise
     except Exception:
         session.rollback()
         raise
