@@ -207,8 +207,9 @@ def run_chat_turn(
     return ChatMessage(
         role="assistant",
         content=answer_args["text"],
-        chart_refs=chart_refs,
+        chart_ref=chart_refs,
         citations=citations,
+        follow_up_suggestions=answer_args.get("follow_up_suggestions", []),
     )
 
 

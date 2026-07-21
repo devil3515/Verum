@@ -7,6 +7,7 @@ class ChatMessage(BaseModel):
     content: str
     chart_ref: list[str] = Field(default_factory=list)
     citations: list[dict] = Field(default_factory=list)
+    follow_up_suggestions: list[str] = Field(default_factory=list)
 
 
 class ChatSession(BaseModel):

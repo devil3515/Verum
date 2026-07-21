@@ -13,7 +13,7 @@ Takes the full pipeline output and writes a structured narrative report:
 
 The report is markdown. The frontend renders it.
 """
-from typing import Callable, Optional
+from typing import Callable, Optional, List, Dict, Any
 
 from pydantic import BaseModel, Field
 
@@ -29,7 +29,7 @@ class SynthesisOutput(BaseModel):
     data_quality_notes: str = Field(
         description="1-2 sentences summarizing what the cleaning agent found and fixed. Be specific about row counts and operations."
     )
-    findings: list[dict] = Field(
+    findings: List[Dict[str, Any]] = Field(
         description=(
             "Ordered list of key findings. Each item has: "
             "'heading' (short title), "
@@ -38,16 +38,20 @@ class SynthesisOutput(BaseModel):
             "'status' (confirmed/unverifiable/contradicted)."
         )
     )
-    contradicted_claims: list[str] = Field(
+    contradicted_claims: List[str] = Field(
         default_factory=list,
         description="List of claim texts that were contradicted by verification. Each should note what the contradiction was."
     )
     caveats: str = Field(
         description="1-2 sentences about limitations: data coverage, outliers kept, unverifiable claims, etc."
     )
+    limitations: List[str] = Field(
+        default_factory=list,
+        description="List of key limitations or caveats to the analysis."
+    )
 
 
-def _build_prompt(state: PipelineState) -> str:
+def _build_prompt(state: PipelineState) -> str:  # type: ignore
     # cleaning summary
     cleaning_lines = []
     for entry in state.cleaning_log:
@@ -145,6 +149,12 @@ def _render_markdown(output: SynthesisOutput, state: PipelineState) -> str:
         sections.append("")
 
     sections.append(f"## Caveats\n{output.caveats}\n")
+
+    if output.limitations:
+        sections.append("## Key Limitations\n")
+        for limitation in output.limitations:
+            sections.append(f"- {limitation}")
+        sections.append("")
 
     return "\n".join(sections)
 

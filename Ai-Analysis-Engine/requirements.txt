@@ -5,3 +5,5 @@ python-dotenv
 openai
 fastapi
 plotly
+sqlalchemy
+python-multipart

@@ -33,7 +33,7 @@ class User(Base):
 
 
 
-class Runs(Base):
+class Run(Base):
     __tablename__ = "runs"
 
     id = Column(String(36), primary_key=True, default=_uuid)
@@ -59,6 +59,7 @@ class Runs(Base):
     claims = relationship("Claim", back_populates="run", order_by="Claim.id", cascade="all, delete-orphan")
     cleaning_log = relationship("CleaningLogEntry", back_populates="run", order_by="CleaningLogEntry.id", cascade="all, delete-orphan")
     chat_session = relationship("ChatSession", back_populates="run", uselist=False, cascade="all, delete-orphan")
+    charts = relationship("Chart", back_populates="run", cascade="all, delete-orphan")
 
 
 class Claim(Base):
@@ -147,6 +148,7 @@ class ChatMessage(Base):
     content = Column(Text, nullable=False)
     chart_ref = Column(JSON, nullable=True)
     citations = Column(JSON, nullable=True)
+    follow_up_suggestions = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), default=_now)
 
     session = relationship("ChatSession", back_populates="messages")
