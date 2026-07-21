@@ -7,7 +7,8 @@ max_iterations. This is what powers the analysis agent's explore phase.
 """
 import json
 import os
-from typing import Type, TypeVar, Callable
+import re
+from typing import Type, TypeVar, Callable, Optional
 
 from openai import OpenAI
 from pydantic import BaseModel
@@ -15,6 +16,35 @@ from pydantic import BaseModel
 from analysis_engine.llm.config import load_llm_config
 
 T = TypeVar("T", bound=BaseModel)
+
+
+def extract_text_from_json_stream(accumulated_args: str) -> str:
+    """
+    Extracts the partial value of the "text" field from a streaming JSON string,
+    supporting varying whitespace around key and colon.
+    """
+    match = re.search(r'"text"\s*:\s*"', accumulated_args)
+    char_quote = '"'
+    if not match:
+        match = re.search(r"'text'\s*:\s*'", accumulated_args)
+        char_quote = "'"
+        if not match:
+            return ""
+    
+    start = match.end()
+    text_val = ""
+    escaped = False
+    for char in accumulated_args[start:]:
+        if escaped:
+            text_val += char
+            escaped = False
+        elif char == '\\':
+            escaped = True
+        elif char == char_quote:
+            break
+        else:
+            text_val += char
+    return text_val
 
 
 class LLMClient:
@@ -70,6 +100,7 @@ class LLMClient:
         tool_dispatcher: Callable[[str, dict], object],
         finish_tool_name: str = "finish",
         max_iterations: int = 10,
+        event_callback: Optional[Callable[[str, dict], None]] = None,
     ) -> tuple[list[dict], dict | None]:
         """
         Multi-turn tool-calling loop.
@@ -109,6 +140,10 @@ class LLMClient:
                 })
                 budget_warning_sent = True
 
+            # Call event callback to signal thinking starting
+            if event_callback:
+                event_callback("chat_thinking_start", {})
+
             response = self._client.chat.completions.create(
                 model=self.config.model,
                 messages=messages,
@@ -117,48 +152,103 @@ class LLMClient:
                 tools=tools,
                 tool_choice="auto",
                 extra_headers=self.config.headers,
+                stream=True,
             )
 
-            message = response.choices[0].message
+            accumulated_content = ""
+            accumulated_tool_calls = {}
 
-            # append assistant turn to history
-            messages.append({
-                "role": "assistant",
-                "content": message.content or "",
-                "tool_calls": [
-                    {
-                        "id": tc.id,
+            for chunk in response:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+
+                # Stream reasoning tokens
+                if delta.content:
+                    accumulated_content += delta.content
+                    if event_callback:
+                        event_callback("chat_thinking_token", {"token": delta.content})
+
+                # Stream tool call tokens
+                if delta.tool_calls:
+                    for tc_delta in delta.tool_calls:
+                        idx = tc_delta.index
+                        if idx not in accumulated_tool_calls:
+                            accumulated_tool_calls[idx] = {
+                                "id": tc_delta.id,
+                                "name": None,
+                                "arguments": ""
+                            }
+                        tc = accumulated_tool_calls[idx]
+                        if tc_delta.id:
+                            tc["id"] = tc_delta.id
+                        if tc_delta.function:
+                            if tc_delta.function.name:
+                                tc["name"] = tc_delta.function.name
+                            if tc_delta.function.arguments:
+                                old_args = tc["arguments"]
+                                tc["arguments"] += tc_delta.function.arguments
+
+                                # Stream answer text tokens if calling the finish tool
+                                if tc["name"] == finish_tool_name:
+                                    old_text = extract_text_from_json_stream(old_args)
+                                    new_text = extract_text_from_json_stream(tc["arguments"])
+                                    if len(new_text) > len(old_text):
+                                        diff = new_text[len(old_text):]
+                                        if event_callback:
+                                            event_callback("chat_answer_token", {"token": diff})
+
+            tool_calls_list = []
+            for idx, tc in sorted(accumulated_tool_calls.items()):
+                if tc["name"]:
+                    tool_calls_list.append({
+                        "id": tc["id"],
                         "type": "function",
                         "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments,
+                            "name": tc["name"],
+                            "arguments": tc["arguments"]
                         }
-                    }
-                    for tc in (message.tool_calls or [])
-                ] or None,
+                    })
+
+            # Append assistant message to history
+            messages.append({
+                "role": "assistant",
+                "content": accumulated_content,
+                "tool_calls": tool_calls_list if tool_calls_list else None,
             })
 
-            if not message.tool_calls:
-                # model stopped without calling finish - treat as done
+            if not tool_calls_list:
                 break
 
-            for tc in message.tool_calls:
-                tool_name = tc.function.name
-                args = json.loads(tc.function.arguments)
-
+            for tc in tool_calls_list:
+                tool_name = tc["function"]["name"]
+                
+                # Check if it is the finish tool call
                 if tool_name == finish_tool_name:
-                    finish_args = args
+                    try:
+                        finish_args = json.loads(tc["function"]["arguments"])
+                    except Exception:
+                        finish_args = {
+                            "text": extract_text_from_json_stream(tc["function"]["arguments"]),
+                            "citations": [],
+                            "follow_up_suggestions": []
+                        }
                     return messages, finish_args
 
-                # execute the tool and feed result back
+                # Execute other tools
+                try:
+                    args = json.loads(tc["function"]["arguments"])
+                except Exception:
+                    args = {}
                 tool_result = tool_dispatcher(tool_name, args)
+                
                 messages.append({
                     "role": "tool",
-                    "tool_call_id": tc.id,
+                    "tool_call_id": tc["id"],
                     "content": tool_result.output if hasattr(tool_result, "output") else str(tool_result),
                 })
 
-                print(f"  [explore] {tool_name}({', '.join(f'{k}={v}' for k,v in args.items())}) -> {tool_result.output[:80]}...")
+                print(f"  [explore] {tool_name}({', '.join(f'{k}={v}' for k,v in args.items())}) -> {tool_result.output[:80] if hasattr(tool_result, 'output') else str(tool_result)[:80]}...")
 
         return messages, finish_args
 
