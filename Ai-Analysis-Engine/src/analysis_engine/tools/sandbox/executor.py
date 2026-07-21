@@ -19,6 +19,19 @@ except ImportError:
     px = None
     go = None
 
+import threading
+_LAST_SHOWN_FIGURES = {}  # {thread_ident: figure}
+
+def _custom_show(self, *args, **kwargs):
+    ident = threading.get_ident()
+    _LAST_SHOWN_FIGURES[ident] = self
+
+if _PLOTLY_AVAILABLE and go:
+    try:
+        go.Figure.show = _custom_show
+    except Exception:
+        pass
+
 from analysis_engine.tools.sandbox.guard import validate_sandbox_code, get_guard_summary, GuardResult
 
 
@@ -101,10 +114,12 @@ def _create_restricted_builtins() -> dict:
         if hasattr(builtins, name):
             safe_builtins[name] = getattr(builtins, name)
 
-    # Python 3.13 requires __import__ to exist in __builtins__ dict or exec
-    # will throw a confusing KeyError. We provide a sentinel that raises a
-    # clear, actionable error instead.
+    # Allow imports of allowed libraries (pandas, numpy, plotly) to make execution resilient
+    original_import = builtins.__import__
     def _blocked_import(name, *args, **kwargs):
+        base_module = name.split(".")[0]
+        if base_module in {"pandas", "numpy", "plotly", "math", "statistics", "cmath", "collections", "itertools", "functools", "operator", "datetime", "dateutil", "string", "re", "textwrap", "typing"}:
+            return original_import(name, *args, **kwargs)
         raise ImportError(
             f"import {name!r} is blocked in the sandbox. "
             "px, go, pd, np are already available as globals — use them directly."
@@ -157,8 +172,10 @@ def _run_with_timeout(fn, timeout_seconds: float):
     import threading
     result_box = [None]
     error_box  = [None]
+    sub_thread_ident = [None]
 
     def target():
+        sub_thread_ident[0] = threading.get_ident()
         try:
             result_box[0] = fn()
         except Exception as e:
@@ -175,7 +192,7 @@ def _run_with_timeout(fn, timeout_seconds: float):
     if error_box[0] is not None:
         raise error_box[0]
 
-    return result_box[0]
+    return result_box[0], sub_thread_ident[0]
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +256,7 @@ def execute_sandbox_code(
     result_value = None
     error_msg = None
     truncated = False
+    sub_thread_ident = None
 
     def _exec():
         with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
@@ -247,7 +265,7 @@ def execute_sandbox_code(
         return exec_globals.get("result")
 
     try:
-        result_value = _run_with_timeout(_exec, config.max_execution_time_seconds)
+        result_value, sub_thread_ident = _run_with_timeout(_exec, config.max_execution_time_seconds)
     except _TimeoutError:
         error_msg = f"Execution timed out after {config.max_execution_time_seconds}s"
     except MemoryError:
@@ -277,9 +295,16 @@ def execute_sandbox_code(
 
     # 6. Format return value if present
     chart_spec = None
-    if result_value is not None and not error_msg:
-        # detect plotly figure BEFORE formatting as text
-        chart_spec = _try_extract_chart_spec(result_value)
+    shown_fig = _LAST_SHOWN_FIGURES.pop(sub_thread_ident, None) if sub_thread_ident else None
+    
+    # Check if a figure was returned or shown
+    target_fig = result_value
+    if target_fig is None or not _try_extract_chart_spec(target_fig):
+        if shown_fig:
+            target_fig = shown_fig
+
+    if target_fig is not None and not error_msg:
+        chart_spec = _try_extract_chart_spec(target_fig)
         if chart_spec:
             result_str = f"Chart generated: {chart_spec.get('layout', {}).get('title', {}).get('text', 'untitled')}"
         else:

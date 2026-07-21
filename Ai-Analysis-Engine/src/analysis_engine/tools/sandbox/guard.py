@@ -53,6 +53,8 @@ class _ImportChecker(ast.NodeVisitor):
         "string", "re", "textwrap",
         # Type hints
         "typing",
+        # Data science
+        "pandas", "numpy",
         # Visualization — LLM generates chart code via sandbox
         "plotly",
     }

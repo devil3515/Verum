@@ -53,6 +53,7 @@ RULES:
 6. After at most 6 tool calls, call answer() with your response.
 7. Reference the pipeline_context if it already contains the answer — don't
    re-compute what the pipeline already found.
+8. Provide a detailed, clear explanation of your findings and any generated charts. When asked to compare categories/regions or analyze differences, don't just output the values — explain the insights, trends, and significance of the results in a friendly, conversational manner.
 
 CITATION RULE: Every numeric fact in your answer text must appear in a citation
 pointing to the tool call that produced it. If you can't cite a number, don't
@@ -183,6 +184,7 @@ def run_chat_turn(
         tool_dispatcher=tool_dispatcher,
         finish_tool_name="answer",
         max_iterations=8,
+        event_callback=event_callback,
     )
     if not answer_args:
          answer_args = {
